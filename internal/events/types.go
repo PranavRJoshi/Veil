@@ -21,7 +21,7 @@ const (
 /*
 	String() method for EventKind used to return the stringified version of the enumeration defined above.
 */
-func (k EventKind) String() string {
+func (k EventKind) String () string {
 	switch k {
 		case KindSyscall:
 			return "syscall"
@@ -54,7 +54,7 @@ type Event struct {
 	A null terminator check is done, and the slice is returned,
 	else all 16 bytes of Comm field is returned.
 */
-func (e Event) ProcessName() string {
+func (e Event) ProcessName () string {
 	for i, b := range e.Comm {
 		if b == 0 {
 			return string(e.Comm[:i])
