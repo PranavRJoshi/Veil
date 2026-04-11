@@ -43,8 +43,8 @@ func (k EventKind) String () string {
 */
 type Event struct {
 	Kind			EventKind
-	Pid				uint32
-	Tid				uint32
+	PID				uint32
+	TID				uint32
 	Comm			[16]byte		// kernel gives us 15 chars and 1 null terminator
 	Timestamp		uint64
 }
