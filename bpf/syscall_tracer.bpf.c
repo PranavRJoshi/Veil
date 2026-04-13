@@ -1,7 +1,14 @@
 // go:build ignore
 
 /*
- * The SEC macro we used here are to place the appropriate code or data
+ * This file is taken as input by bpf2go utility. The directory './modules/syscall'
+ * is where the go file for this eBPF program will reside. The file
+ * './modules/syscall/syscall.go' will then call the bpf2go interfaces that
+ * is compatible with the below eBPF program.
+ */
+
+/*
+ * The SEC macro we use here are to place the appropriate code or data
  * of the source into respective sections on the ELF file.
  *
  * - SEC(".maps") is used to convey the BPF map definition needs to be
