@@ -30,6 +30,9 @@ kernscope is a collection of eBPF modules, each targeting a specific kernel subs
 # Install bpf2go
 go install github.com/cilium/ebpf/cmd/bpf2go@v0.11.0
 
+# Export GOPATH to PATH environment variable
+export PATH=$PATH:$(go env GOPATH)/bin
+
 # Build
 make
 ```
