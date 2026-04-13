@@ -47,6 +47,7 @@ type Event struct {
 	TID				uint32
 	Comm			[16]byte		// kernel gives us 15 chars and 1 null terminator
 	Timestamp		uint64
+	SyscallNr		uint64			// tracing syscall events
 }
 
 /*
