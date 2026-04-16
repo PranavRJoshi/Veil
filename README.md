@@ -1,10 +1,10 @@
-# kernscope
+# Veil
 
 A kernel observability and analysis toolkit built on eBPF. Designed to teach eBPF concepts through practical, real-world problem solving.
 
 ## What It Does
 
-kernscope is a collection of eBPF modules, each targeting a specific kernel subsystem. Each module is both a learning exercise and a useful diagnostic tool:
+Veil is a collection of eBPF modules, each targeting a specific kernel subsystem. Each module is both a learning exercise and a useful diagnostic tool:
 
 | Module | Purpose |
 |---|---|
@@ -40,13 +40,13 @@ make
 ## Project Structure
 
 ```
-go-kernscope/
+Veil/
 ├── bpf/				# eBPF C programs (kernel-side) 
 │   └── headers			# vmlinux.h and shared BPF headers
 ├── cmd/				# CLI
 │   ├── gen/			# parse unistd.h from host and gen syscall table
 │   │   └── syscalls
-│   └── kernscope		# main CLI application
+│   └── veil			# main CLI application
 ├── internal/
 │   ├── events			# Shared kernel event types
 │   ├── exterrs			# error method
@@ -64,5 +64,4 @@ go-kernscope/
 ## Notes
 
 - Requires root or `CAP_BPF` capability to load BPF programs
-- `vmlinux.h` is generated from the running kernel and is machine-specific — do not commit it
 - Tested on Go 1.18.1, Clang 14.0
