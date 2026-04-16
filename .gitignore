@@ -1,5 +1,7 @@
 bpf/headers/vmlinux.h
-modules/syscall/tracer_bpfel.go
-modules/syscall/tracer_bpfel.o
+modules/*/*bpfel.go
+modules/*/*bpfel.o
+modules/*/*bpfeb.go
+modules/*/*bpfeb.o
 modules/syscall/syscall_table.go
 bin/
