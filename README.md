@@ -41,7 +41,7 @@ make
 
 ```
 Veil/
-├── bpf/				# eBPF C programs (kernel-side) 
+├── bpf/				# eBPF C programs (kernel-side)
 │   └── headers			# vmlinux.h and shared BPF headers
 ├── cmd/				# CLI
 │   ├── gen/			# parse unistd.h from host and gen syscall table
@@ -52,7 +52,8 @@ Veil/
 │   ├── exterrs			# error method
 │   └── loader			# BPF program lifecycle management
 └── modules/			# One package per kernel subsystem
-    └── syscall
+    ├── syscall
+    └── files
 ```
 
 ## Stack
@@ -60,8 +61,3 @@ Veil/
 - **Userspace**: Go + `cilium/ebpf`
 - **Kernel-side**: C compiled to BPF bytecode via Clang
 - **Portability**: CO-RE (Compile Once – Run Everywhere) via BTF — no kernel headers needed at runtime
-
-## Notes
-
-- Requires root or `CAP_BPF` capability to load BPF programs
-- Tested on Go 1.18.1, Clang 14.0
