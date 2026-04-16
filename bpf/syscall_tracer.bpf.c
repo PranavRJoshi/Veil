@@ -49,7 +49,7 @@ struct {
  * Attach the raw_syscalls:sys_enter **tracepoint**.
  * the 'ctx' argument is used to fetch the syscall number and arguments.
  *
- * Uses the following 'bpf_helpers(7)' functions:
+ * Uses the following 'bpf-helpers(7)' functions:
  *		- bpf_ringbuf_reserve
  *		- bpf_get_current_pid_tgid
  *		- bpf_ktime_get_ns
