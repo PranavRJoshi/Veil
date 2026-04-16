@@ -1,4 +1,4 @@
-module github.com/PranavRJoshi/go-kernscope
+module github.com/PranavRJoshi/Veil
 
 go 1.18
 

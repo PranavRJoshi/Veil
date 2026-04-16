@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/PranavRJoshi/go-kernscope/internal/events"
+	"github.com/PranavRJoshi/Veil/internal/events"
 )
 
 /*

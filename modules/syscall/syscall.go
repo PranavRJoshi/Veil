@@ -24,9 +24,9 @@ import (
 
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
-	"github.com/PranavRJoshi/go-kernscope/internal/exterrs"
-	"github.com/PranavRJoshi/go-kernscope/internal/events"
-	"github.com/PranavRJoshi/go-kernscope/internal/loader"
+	"github.com/PranavRJoshi/Veil/internal/exterrs"
+	"github.com/PranavRJoshi/Veil/internal/events"
+	"github.com/PranavRJoshi/Veil/internal/loader"
 )
 
 /*

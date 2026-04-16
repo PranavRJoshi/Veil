@@ -3,7 +3,7 @@ package loader
 import (
 	"fmt"
 
-	"github.com/PranavRJoshi/go-kernscope/internal/exterrs"
+	"github.com/PranavRJoshi/Veil/internal/exterrs"
 )
 
 /*

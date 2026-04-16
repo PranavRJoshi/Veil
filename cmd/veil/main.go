@@ -6,15 +6,18 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/PranavRJoshi/go-kernscope/internal/loader"
-	ksyscall "github.com/PranavRJoshi/go-kernscope/modules/syscall"
+	"github.com/PranavRJoshi/Veil/internal/loader"
+	ksyscall "github.com/PranavRJoshi/Veil/modules/syscall"
+	kfiles "github.com/PranavRJoshi/Veil/modules/files"
 )
 
 func main() {
 	tracer := ksyscall.New()
+	files := kfiles.New()
 
 	m := loader.NewManager()
 	m.Register(tracer)
+	m.Register(files)
 
 	if err := m.LoadAll(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -22,11 +25,11 @@ func main() {
 	}
 	defer m.CloseAll()
 
-	fmt.Println("kscope running, press ctrl+c to stop")
+	fmt.Println("Veil running, press ctrl+c to stop")
 
 	/*
-		A simple goroutine which traces the events that has occurred and
-		prints it to the standard output.
+		Goroutine whose task is to collect the syscall events
+		and print them out
 	*/
 	go func() {
 		for e := range tracer.Events {
@@ -35,6 +38,22 @@ func main() {
 				e.PID,
 				e.ProcessName(),
 				ksyscall.SyscallName(e.SyscallNr),
+			)
+		}
+	}()
+
+	/*
+		Goroutine whose task is to collect the file access events
+		and print them out
+	*/
+	go func() {
+		for e := range files.Events {
+			fmt.Printf("[%s] pid=%-6d comm=%-16s op=%-6s path=%s\n",
+				e.Kind,
+				e.PID,
+				e.ProcessName(),
+				e.Op,
+				e.Path,
 			)
 		}
 	}()
