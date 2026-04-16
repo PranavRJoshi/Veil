@@ -1,5 +1,7 @@
 MODULE_DIR := modules
 
+BIN := bin/veil
+
 SYSCALL_MODULE_DIR := $(MODULE_DIR)/syscall
 SYSCALL_BPF2GO := $(SYSCALL_MODULE_DIR)/tracer_bpfeb.go $(SYSCALL_MODULE_DIR)/tracer_bpfel.go
 SYSCALL_BPF2GO_OBJS := $(SYSCALL_MODULE_DIR)/tracer_bpfeb.o $(SYSCALL_MODULE_DIR)/tracer_bpfel.o
@@ -24,4 +26,5 @@ build:
 
 clean:
 	rm -f bin/kernscope bpf/headers/vmlinux.h $(SYSCALL_BPF2GO) \
-	$(SYSCALL_BPF2GO_OBJS) $(FILES_BPF2GO) $(FILES_BPF2GO_OBJS)
+	$(SYSCALL_BPF2GO_OBJS) $(FILES_BPF2GO) $(FILES_BPF2GO_OBJS) \
+	$(BIN)
