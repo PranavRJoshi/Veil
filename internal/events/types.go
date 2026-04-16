@@ -51,6 +51,15 @@ type Event struct {
 }
 
 /*
+	Used for modules/files
+*/
+type FileEvent struct {
+	Event
+	Path string
+	Op string
+}
+
+/*
 	ProcessName() method of Event structure.
 	A null terminator check is done, and the slice is returned,
 	else all 16 bytes of Comm field is returned.
