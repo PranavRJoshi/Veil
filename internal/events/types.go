@@ -45,17 +45,29 @@ type Event struct {
 	Kind			EventKind
 	PID				uint32
 	TID				uint32
+	UID				uint32
+	GID				uint32
 	Comm			[16]byte		// kernel gives us 15 chars and 1 null terminator
 	Timestamp		uint64
 	SyscallNr		uint64			// tracing syscall events
 }
 
 /*
-	Used for modules/files
+	SyscallEvent extends Event with the syscall number.
+	Used for syscall module.
+*/
+type SyscallEvent struct {
+	Event
+	SyscallNr		uint64
+}
+
+/*
+	FileEvent extends Event with FileName and Op.
+	Used for files module.
 */
 type FileEvent struct {
 	Event
-	Path string
+	FileName string
 	Op string
 }
 
