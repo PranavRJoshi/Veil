@@ -1,0 +1,173 @@
+package cli
+
+import (
+	"testing"
+)
+
+/*
+	TestParseModuleOnly verifies that --module alone is accepted
+	and the module name is correctly stored.
+*/
+func TestParseModuleOnly(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Module != "syscall" {
+		t.Errorf("expected module 'syscall', got %q", cfg.Module)
+	}
+	if len(cfg.ModuleFlags) != 0 {
+		t.Errorf("expected no module flags, got %v", cfg.ModuleFlags)
+	}
+}
+
+/*
+	TestParseWithFlags verifies that per-module flags are collected
+	correctly into ModuleFlags.
+*/
+func TestParseWithFlags(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "-p", "1234", "-n", "bash"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Module != "syscall" {
+		t.Errorf("expected module 'syscall', got %q", cfg.Module)
+	}
+	if cfg.ModuleFlags["pid"] != "1234" {
+		t.Errorf("expected pid '1234', got %q", cfg.ModuleFlags["pid"])
+	}
+	if cfg.ModuleFlags["name"] != "bash" {
+		t.Errorf("expected name 'bash', got %q", cfg.ModuleFlags["name"])
+	}
+}
+
+/*
+	TestParseLongFormFlags verifies that long-form flags (--pid, --name)
+	work identically to their short-form counterparts.
+*/
+func TestParseLongFormFlags(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "files", "--pid", "999", "--name", "nginx", "--op", "read,write", "--file", "passwd"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Module != "files" {
+		t.Errorf("expected module 'files', got %q", cfg.Module)
+	}
+	if cfg.ModuleFlags["pid"] != "999" {
+		t.Errorf("expected pid '999', got %q", cfg.ModuleFlags["pid"])
+	}
+	if cfg.ModuleFlags["op"] != "read,write" {
+		t.Errorf("expected op 'read,write', got %q", cfg.ModuleFlags["op"])
+	}
+	if cfg.ModuleFlags["file"] != "passwd" {
+		t.Errorf("expected file 'passwd', got %q", cfg.ModuleFlags["file"])
+	}
+}
+
+/*
+	TestParseHelp verifies that --help sets the ShowHelp flag.
+*/
+func TestParseHelp(t *testing.T) {
+	cfg, err := Parse([]string{"--help"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.ShowHelp {
+		t.Error("expected ShowHelp to be true")
+	}
+}
+
+/*
+	TestParseShortHelp verifies that -h is equivalent to --help.
+*/
+func TestParseShortHelp(t *testing.T) {
+	cfg, err := Parse([]string{"-h"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.ShowHelp {
+		t.Error("expected ShowHelp to be true")
+	}
+}
+
+/*
+	TestParseListModules verifies that --list-modules sets the flag.
+*/
+func TestParseListModules(t *testing.T) {
+	cfg, err := Parse([]string{"--list-modules"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.ListModules {
+		t.Error("expected ListModules to be true")
+	}
+}
+
+/*
+	TestParseMissingModule verifies that omitting --module produces
+	a descriptive error.
+*/
+func TestParseMissingModule(t *testing.T) {
+	_, err := Parse([]string{"-p", "1234"})
+	if err == nil {
+		t.Fatal("expected error for missing --module, got nil")
+	}
+}
+
+/*
+	TestParseUnknownModule verifies that an invalid module name
+	is rejected.
+*/
+func TestParseUnknownModule(t *testing.T) {
+	_, err := Parse([]string{"--module", "network"})
+	if err == nil {
+		t.Fatal("expected error for unknown module, got nil")
+	}
+}
+
+/*
+	TestParseMissingFlagValue verifies that flags without values
+	produce errors.
+*/
+func TestParseMissingFlagValue(t *testing.T) {
+	cases := [][]string{
+		{"--module"},
+		{"--module", "syscall", "-p"},
+		{"--module", "syscall", "-n"},
+		{"--module", "syscall", "-s"},
+		{"--module", "files", "--op"},
+		{"--module", "files", "--file"},
+	}
+
+	for _, args := range cases {
+		_, err := Parse(args)
+		if err == nil {
+			t.Errorf("expected error for args %v, got nil", args)
+		}
+	}
+}
+
+/*
+	TestParseUnknownFlag verifies that unrecognized flags are
+	rejected with an error.
+*/
+func TestParseUnknownFlag(t *testing.T) {
+	_, err := Parse([]string{"--module", "syscall", "--bogus"})
+	if err == nil {
+		t.Fatal("expected error for unknown flag, got nil")
+	}
+}
+
+/*
+	TestParseSyscallFilter verifies the -s/--syscall flag for
+	comma-separated syscall names.
+*/
+func TestParseSyscallFilter(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "-s", "openat,read,write"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModuleFlags["syscall"] != "openat,read,write" {
+		t.Errorf("expected syscall 'openat,read,write', got %q", cfg.ModuleFlags["syscall"])
+	}
+}
