@@ -31,6 +31,7 @@ Veil is a collection of eBPF modules, each targeting a specific kernel subsystem
 go install github.com/cilium/ebpf/cmd/bpf2go@v0.11.0
 
 # Export GOPATH to PATH environment variable
+# Skip this if you already have GOPATH in PATH
 export PATH=$PATH:$(go env GOPATH)/bin
 
 # Build
@@ -41,17 +42,18 @@ make
 
 ```
 Veil/
-├── bpf/				# eBPF C programs (kernel-side)
-│   └── headers			# vmlinux.h and shared BPF headers
-├── cmd/				# CLI
-│   ├── gen/			# parse unistd.h from host and gen syscall table
+├── bpf/                # eBPF C programs (kernel-side)
+│   └── headers         # vmlinux.h and shared BPF headers
+├── cmd/                # CLI
+│   ├── gen/            # parse unistd.h from host and gen syscall table
 │   │   └── syscalls
-│   └── veil			# main CLI application
+│   └── veil            # main CLI application
 ├── internal/
-│   ├── events			# Shared kernel event types
-│   ├── exterrs			# error method
-│   └── loader			# BPF program lifecycle management
-└── modules/			# One package per kernel subsystem
+│   ├── cli             # Command-line argument parser
+│   ├── events          # Shared kernel event types
+│   ├── exterrs         # error method
+│   └── loader          # BPF program lifecycle management
+└── modules/            # One package per kernel subsystem
     ├── syscall
     └── files
 ```
