@@ -17,31 +17,39 @@ import (
 type syscallEvent struct {
 	PID       uint32
 	TID       uint32
+	UID       uint32
+	GID       uint32
 	Timestamp uint64
 	SyscallNr uint64
 	Comm      [16]byte
 }
 
-func parseEvent(raw []byte) (events.Event, error) {
-	if len(raw) < 40 {
-		return events.Event{}, fmt.Errorf("short read: %d bytes", len(raw))
+func parseEvent(raw []byte) (events.SyscallEvent, error) {
+	if len(raw) < 48 {
+		return events.SyscallEvent{}, fmt.Errorf("short read: %d bytes", len(raw))
 	}
 
 	// LittleEndian because x86_64 — we'll make this configurable later
 	se := syscallEvent{
 		PID:       binary.LittleEndian.Uint32(raw[0:4]),
 		TID:       binary.LittleEndian.Uint32(raw[4:8]),
-		Timestamp: binary.LittleEndian.Uint64(raw[8:16]),
-		SyscallNr: binary.LittleEndian.Uint64(raw[16:24]),
+		UID:       binary.LittleEndian.Uint32(raw[8:12]),
+		GID:       binary.LittleEndian.Uint32(raw[12:16]),
+		Timestamp: binary.LittleEndian.Uint64(raw[16:24]),
+		SyscallNr: binary.LittleEndian.Uint64(raw[24:32]),
 	}
-	copy(se.Comm[:], raw[24:40])
+	copy(se.Comm[:], raw[32:48])
 
-	return events.Event{
-		Kind:      events.KindSyscall,
-		PID:       se.PID,
-		TID:       se.TID,
-		Timestamp: se.Timestamp,
-		Comm:      se.Comm,
+	return events.SyscallEvent{
+		Event: events.Event {
+			Kind:      events.KindSyscall,
+			PID:       se.PID,
+			TID:       se.TID,
+			UID:       se.UID,
+			GID:       se.GID,
+			Timestamp: se.Timestamp,
+			Comm:      se.Comm,
+		}, 
 		SyscallNr: se.SyscallNr,
 	}, nil
 }
