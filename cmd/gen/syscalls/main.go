@@ -139,11 +139,22 @@ var syscallNames = map[uint64]string{
 {{- end}}
 }
 
+var syscallNumbers = map[string]uint64{
+{{- range .}}
+	"{{.Name}}": {{.Nr}},
+{{- end}}
+}
+
 func SyscallName(nr uint64) string {
 	if name, ok := syscallNames[nr]; ok {
 		return name
 	}
 	return fmt.Sprintf("syscall_%d", nr)
+}
+
+func SyscallNumber(name string) (uint64, bool) {
+	nr, ok := syscallNumbers[name]
+	return nr, ok
 }
 `))
 
