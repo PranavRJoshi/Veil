@@ -10,6 +10,10 @@ FILES_MODULE_DIR := $(MODULE_DIR)/files
 FILES_BPF2GO := $(FILES_MODULE_DIR)/fileaccess_bpfeb.go $(FILES_MODULE_DIR)/fileaccess_bpfel.go
 FILES_BPF2GO_OBJS := $(FILES_MODULE_DIR)/fileaccess_bpfeb.o $(FILES_MODULE_DIR)/fileaccess_bpfel.o
 
+NETWORK_MODULE_DIR := $(MODULE_DIR)/network
+NETWORK_BPF2GO := $(NETWORK_MODULE_DIR)/networktracer_bpfeb.go $(NETWORK_MODULE_DIR)/networktracer_bpfel.go
+NETWORK_BPF2GO_OBJS := $(NETWORK_MODULE_DIR)/networktracer_bpfeb.o $(NETWORK_MODULE_DIR)/networktracer_bpfel.o
+
 .PHONY: all generate clean
 
 all: generate build
@@ -27,4 +31,4 @@ build:
 clean:
 	rm -f bin/kernscope bpf/headers/vmlinux.h $(SYSCALL_BPF2GO) \
 	$(SYSCALL_BPF2GO_OBJS) $(FILES_BPF2GO) $(FILES_BPF2GO_OBJS) \
-	$(BIN)
+	$(NETWORK_BPF2GO) $(NETWORK_BPF2GO_OBJS) $(BIN)
