@@ -21,8 +21,9 @@ type Config struct {
 	Currently supported modules.
 */
 var knownModules = map[string]bool{
-	"syscall": true,
-	"files":   true,
+	"syscall":	true,
+	"files":	true,
+	"network":	true,
 }
 
 /*
@@ -47,6 +48,9 @@ Syscall module flags:
 Files module flags:
   --op <op>             Filter by operation: open, read, write (comma-separated)
   --file <name>		    Filter by filename (substring match)
+
+Network module flags:
+  --port <port>         Filter by port number (comma-separated)
 `
 	fmt.Fprint(os.Stderr, u)
 }
@@ -139,6 +143,13 @@ func Parse(args []string) (Config, error) {
 				i++
 				cfg.ModuleFlags["file"] = args[i]
 
+			case arg == "--port":
+				if i+1 >= len(args) {
+					return cfg, fmt.Errorf("--port requires a value")
+				}
+				i++
+				cfg.ModuleFlags["port"] = args[i]
+
 			case strings.HasPrefix(arg, "-"):
 				return cfg, fmt.Errorf("unknown flag: %s", arg)
 
@@ -169,9 +180,9 @@ func PrintModules() {
 	fmt.Println("Available modules:")
 	fmt.Println("  syscall   - Trace system call events (raw_syscalls:sys_enter)")
 	fmt.Println("  files     - Trace file access events (vfs_open, vfs_read, vfs_write)")
+	fmt.Println("  network   - TCP connection lifecycle tracing (connect, accept, close)")
 	fmt.Println()
 	fmt.Println("Planned modules:")
-	fmt.Println("  network   - Flow-level network monitoring")
 	fmt.Println("  scheduler - CPU run queue latency profiling")
 	fmt.Println("  memory    - OOM event inspection and page fault tracing")
 }
