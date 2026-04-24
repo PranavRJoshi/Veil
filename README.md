@@ -55,7 +55,8 @@ Veil/
 │   └── loader          # BPF program lifecycle management
 └── modules/            # One package per kernel subsystem
     ├── syscall
-    └── files
+    ├── files
+    └── network
 ```
 
 ## Stack
