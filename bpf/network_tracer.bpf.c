@@ -345,8 +345,6 @@ int BPF_KPROBE(kprobe_tcp_v4_connect, struct sock *sk)
 
     bpf_map_update_elem(&sock_pid, &sk, &info, BPF_ANY);
 
-	bpf_printk("kprobe_tcp_v4_connect hit\n");
-
     return 0;
 }
 
@@ -372,8 +370,6 @@ int BPF_KRETPROBE(kretprobe_inet_csk_accept, struct sock *sk)
     bpf_get_current_comm(&info.comm, sizeof(info.comm));
 
     bpf_map_update_elem(&sock_pid, &sk, &info, BPF_ANY);
-
-	bpf_printk("kretprobe_inet_csk_accept hit\n");
 
     return 0;
 }
@@ -430,8 +426,6 @@ int BPF_KPROBE(kprobe_inet_listen, struct socket *sock, int backlog)
     if (lport)
         bpf_map_update_elem(&listen_pid, &lport, &info, BPF_ANY);
 
-	bpf_printk("Hit the inet_listen probe!\n");
-
     return 0;
 }
 
@@ -460,12 +454,6 @@ int handle_inet_sock_set_state(struct trace_event_raw_inet_sock_set_state *ctx)
 
     __u8 oldstate = ctx->oldstate;
     __u8 newstate = ctx->newstate;
-
-	__u64 pid_tgid = bpf_get_current_pid_tgid();
-	__u32 temppid = pid_tgid >> 32;
-
-	/* log pid, oldstate and newstate */
-	bpf_printk("inet_sock_set_state hit! pid: %u old state: %u and new state: %u\n", temppid, oldstate, newstate);
 
     /*
 	 * Determine the state transition. We intentionally skip some transitions
@@ -594,8 +582,6 @@ int handle_inet_sock_set_state(struct trace_event_raw_inet_sock_set_state *ctx)
     }
 
     bpf_ringbuf_submit(e, 0);
-
-	bpf_printk("previous inet_sock_set_state! new pid: %u\n", pid);
 
     /*
      * Clean up the sock_pid entry when the connection closes.
