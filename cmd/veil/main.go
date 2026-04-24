@@ -10,6 +10,7 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/loader"
 	ksyscall "github.com/PranavRJoshi/Veil/modules/syscall"
 	kfiles "github.com/PranavRJoshi/Veil/modules/files"
+	knetwork "github.com/PranavRJoshi/Veil/modules/network"
 )
 
 func main() {
@@ -44,42 +45,61 @@ func main() {
 		module's Run method is started as a goroutine after loading.
 	*/
 	switch cfg.Module {
-	case "syscall":
-		/* create the filter based on given command line arguments */
-		filter, err := ksyscall.ParseFilterConfig(cfg.ModuleFlags)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		case "syscall":
+			/* create the filter based on given command line arguments */
+			filter, err := ksyscall.ParseFilterConfig(cfg.ModuleFlags)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
 
-		tracer := ksyscall.New(filter)
-		m.Register(tracer)
+			tracer := ksyscall.New(filter)
+			m.Register(tracer)
  
-		if err := m.LoadAll(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-		defer m.CloseAll()
+			if err := m.LoadAll(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			defer m.CloseAll()
  
-		go tracer.Run(done)
+			go tracer.Run(done)
  
-	case "files":
-		filter, err := kfiles.ParseFilterConfig(cfg.ModuleFlags)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		case "files":
+			filter, err := kfiles.ParseFilterConfig(cfg.ModuleFlags)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
 
-		files := kfiles.New(filter)
-		m.Register(files)
+			files := kfiles.New(filter)
+			m.Register(files)
  
-		if err := m.LoadAll(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-		defer m.CloseAll()
+			if err := m.LoadAll(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			defer m.CloseAll()
  
-		go files.Run(done)
+			go files.Run(done)
+
+		case "network":
+			filter, err := knetwork.ParseFilterConfig(cfg.ModuleFlags)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+
+			net := knetwork.New(filter)
+			m.Register(net)
+
+			if err := m.LoadAll(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+
+			defer m.CloseAll()
+
+			go net.Run(done)
 	}
 
 	fmt.Fprintf(os.Stderr, "Veil [%s] running, press ctrl+c to stop\n", cfg.Module)
