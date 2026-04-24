@@ -49,7 +49,6 @@ type Event struct {
 	GID				uint32
 	Comm			[16]byte		// kernel gives us 15 chars and 1 null terminator
 	Timestamp		uint64
-	SyscallNr		uint64			// tracing syscall events
 }
 
 /*
@@ -69,6 +68,23 @@ type FileEvent struct {
 	Event
 	FileName string
 	Op string
+}
+
+/*
+	NetworkEvent represents a TCP connection lifecycle event.
+	Used for the network module. The event is classified into
+	a meaningful type (connect, accept, close, failed, listen)
+	rather than exposing raw TCP state numbers.
+*/
+type NetworkEvent struct {
+	Event
+	SrcAddr   uint32   /* IPv4 source address, network byte order */
+	DstAddr   uint32   /* IPv4 destination address, network byte order */
+	SrcPort   uint16   /* source port, host byte order */
+	DstPort   uint16   /* destination port, host byte order */
+	EvtType   uint8    /* EVT_CONNECT, EVT_ESTABLISHED, etc. */
+	OldState  uint8    /* previous TCP state */
+	NewState  uint8    /* new TCP state */
 }
 
 /*
