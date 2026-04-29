@@ -28,7 +28,7 @@ struct {
 } file_events SEC(".maps");
 
 /*
- * Filter maps — same convention as syscall_tracer.bpf.c.
+ * Filter maps: same convention as syscall_tracer.bpf.c.
  * If a filter map is non-empty (indicated by filter_cfg bitmask),
  * only events whose key is present in the map are submitted.
  */

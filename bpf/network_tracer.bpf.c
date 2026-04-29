@@ -203,7 +203,7 @@ struct {
  *
  * PID correlation map. The sock:inet_sock_set_state tracepoint fires
  * in interrupt/softirq context for most state transitions, where
- * bpf_get_current_pid_tgid() returns a kernel thread — useless.
+ * bpf_get_current_pid_tgid() returns a kernel thread; useless.
  *
  * The solution (used by BCC's tcptracer, Coroot, SysmonForLinux):
  *   1. Hook tcp_v4_connect (kprobe). Fires in process context before
@@ -320,11 +320,11 @@ static __always_inline int check_port_filter(__u16 sport, __u16 dport)
     if (bpf_map_lookup_elem(&port_filter, &dport))
         return 0;
 
-    return 1;   /* neither port matched — filter out */
+    return 1;   /* neither port matched; filter out */
 }
 
 /*
- * Kprobe on tcp_v4_connect — fires in process context when an outbound
+ * Kprobe on tcp_v4_connect: fires in process context when an outbound
  * TCP connection is initiated. We stash the PID, UID, and comm for
  * later retrieval in the tracepoint handler.
  *
@@ -349,7 +349,7 @@ int BPF_KPROBE(kprobe_tcp_v4_connect, struct sock *sk)
 }
 
 /*
- * Kretprobe on inet_csk_accept — fires when accept() returns a new
+ * Kretprobe on inet_csk_accept: fires when accept() returns a new
  * connected socket. We stash the acceptor's PID for the new socket.
  *
  * Return value: struct sock * (the accepted socket)
