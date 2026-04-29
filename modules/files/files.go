@@ -13,7 +13,37 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/events"
 	"github.com/PranavRJoshi/Veil/internal/loader"
+	"github.com/PranavRJoshi/Veil/internal/output"
+	"github.com/PranavRJoshi/Veil/internal/registry"
 )
+
+/*
+	Register the files module with the global registry.
+*/
+func init() {
+	registry.Register(registry.ModuleInfo{
+		Name:        "files",
+		Description: "Trace file access events (vfs_open, vfs_read, vfs_write)",
+		Flags: []registry.FlagDef{
+			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
+			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
+			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
+			{Name: "op", Description: "Filter by operation: open, read, write (comma-separated)", HasValue: true},
+			{Name: "file", Description: "Filter by filename (substring match)", HasValue: true},
+		},
+		Factory: func(flags map[string]string, sinkIface interface{}) (interface{}, error) {
+			sink, ok := sinkIface.(output.EventSink)
+			if !ok {
+				return nil, fmt.Errorf("files: expected output.EventSink, got %T", sinkIface)
+			}
+			filter, err := ParseFilterConfig(flags)
+			if err != nil {
+				return nil, err
+			}
+			return New(filter, sink), nil
+		},
+	})
+}
 
 /*
 	FilterConfig holds the parsed filter values from the CLI flags.
@@ -121,16 +151,18 @@ type FilesModule struct {
 	reader		*ringbuf.Reader
 	Events		chan events.FileEvent
 	filter      FilterConfig
+	sink		output.EventSink
 }
 
 /*
 	Create an instance of object of type 'FilesModule'.
 */
-func New(filter FilterConfig) *FilesModule {
+func New(filter FilterConfig, sink output.EventSink) *FilesModule {
 	return &FilesModule{
 		BaseProgram:	loader.NewBaseProgram("file_access"),
 		Events:			make(chan events.FileEvent, 256),
 		filter:			filter,
+		sink:           sink,
 	}
 }
 
@@ -143,18 +175,17 @@ func New(filter FilterConfig) *FilesModule {
 */
 func (f *FilesModule) populateFilters() error {
 	var mask uint32
-	placeholder := uint8(1)
+	enable := uint8(1)
 
 	/*
 		The implementation detail for populating the filters are described in
 		the syscall tracing module. The semantic is identical with the syscall
 		module.
 	*/
- 
 	if len(f.filter.PIDs) > 0 {
 		mask |= 1
 		for _, pid := range f.filter.PIDs {
-			if err := f.objs.PidFilter.Update(pid, placeholder, ebpf.UpdateAny); err != nil {
+			if err := f.objs.PidFilter.Update(pid, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("files: set pid filter %d: %w", pid, err)
 			}
 		}
@@ -163,7 +194,7 @@ func (f *FilesModule) populateFilters() error {
 	if len(f.filter.UIDs) > 0 {
 		mask |= 2
 		for _, uid := range f.filter.UIDs {
-			if err := f.objs.UidFilter.Update(uid, placeholder, ebpf.UpdateAny); err != nil {
+			if err := f.objs.UidFilter.Update(uid, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("files: set uid filter %d: %w", uid, err)
 			}
 		}
@@ -296,17 +327,28 @@ func (f *FilesModule) Run(done <-chan struct{}) {
 			if !ok {
 				return
 			}
-			fmt.Printf("[%s] pid=%-6d uid=%-5d comm=%-16s op=%-6s filename=%s\n",
-				e.Kind,
-				e.PID,
-				e.UID,
-				e.ProcessName(),
-				e.Op,
-				e.FileName,
-			)
+			f.sink.Emit("files", filesToFields(e))
 		case <-done:
 			return
 		}
+	}
+}
+
+/*
+	filesToFields converts a FileEvent into a generic field map for the
+	output sink.
+*/
+func filesToFields(e events.FileEvent) map[string]interface{} {
+	return map[string]interface{}{
+		"kind":      e.Kind.String(),
+		"pid":       e.PID,
+		"tid":       e.TID,
+		"uid":       e.UID,
+		"gid":       e.GID,
+		"timestamp": e.Timestamp,
+		"comm":      e.ProcessName(),
+		"op":        e.Op,
+		"filename":  e.FileName,
 	}
 }
 
@@ -322,16 +364,26 @@ func (f *FilesModule) poll() {
 			continue
 		}
 
-		/* Userspace filter: comm name (substring match) */
-		if f.filter.CommName != "" && !strings.Contains(e.ProcessName(), f.filter.CommName) {
-			continue
-		}
- 
-		/* Userspace filter: filename substring */
-		if f.filter.FileName != "" && !strings.Contains(e.FileName, f.filter.FileName) {
+		/* Userspace filters */
+		if !f.matchesFilter(e) {
 			continue
 		}
 
 		f.Events <- e
 	}
 }
+
+/*
+	matchesFilter applies userspace-level filters to a parsed event.
+	Returns true if the event should be forwarded to the Events channel.
+*/
+func (f *FilesModule) matchesFilter(e events.FileEvent) bool {
+	if f.filter.CommName != "" && !strings.Contains(e.ProcessName(), f.filter.CommName) {
+		return false
+	}
+	if f.filter.FileName != "" && !strings.Contains(e.FileName, f.filter.FileName) {
+		return false
+	}
+	return true
+}
+
