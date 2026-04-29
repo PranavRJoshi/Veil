@@ -23,8 +23,6 @@ sudo ./bin/veil --module network --port 443 --output json
 ```
 
 ## Requirements
-
-## Requirements
  
 | Dependency | Version | Purpose |
 |---|---|---|
@@ -154,7 +152,7 @@ Veil/
 │   ├── control         # Interactive and socket control interface
 │   ├── enrich          # Event enrichment middleware
 │   ├── events          # Shared event types
-│   ├── exterrs         # error.Join polyfill
+│   ├── exterrs         # errors.Join polyfill
 │   ├── loader          # BPF program lifecycle
 │   ├── output          # Output sink pipeline (text, JSON)
 │   ├── registry        # Module self-registration
