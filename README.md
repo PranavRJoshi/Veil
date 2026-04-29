@@ -117,6 +117,8 @@ sudo ./bin/veil --module network --control /tmp/veil.sock
 echo "list port" | socat - UNIX-CONNECT:/tmp/veil.sock
 ```
 
+NOTE: The above example uses `socat` binary. It's mirror is published in Github [here](https://github.com/3ndG4me/socat).
+
 ## Building
  
 ```bash
