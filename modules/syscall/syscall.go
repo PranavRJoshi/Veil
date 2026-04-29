@@ -37,7 +37,40 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/events"
 	"github.com/PranavRJoshi/Veil/internal/loader"
+	"github.com/PranavRJoshi/Veil/internal/output"
+	"github.com/PranavRJoshi/Veil/internal/registry"
 )
+
+/*
+	NOTE: The init function in Go is a special function. When
+	used in packages and imported by other files, it will
+	be loaded before the startup function, i.e., main will be
+	executed. Do note that it is executed after the global variables
+	have been initialized.
+*/
+func init() {
+	registry.Register(registry.ModuleInfo{
+		Name:        "syscall",
+		Description: "Trace system call events (raw_syscalls:sys_enter)",
+		Flags: []registry.FlagDef{
+			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
+			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
+			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
+			{Name: "syscall", Short: "s", Description: "Filter by syscall name (comma-separated)", HasValue: true},
+		},
+		Factory: func(flags map[string]string, sinkIface interface{}) (interface{}, error) {
+			sink, ok := sinkIface.(output.EventSink)
+			if !ok {
+				return nil, fmt.Errorf("syscall: expected output.EventSink, got %T", sinkIface)
+			}
+			filter, err := ParseFilterConfig(flags)
+			if err != nil {
+				return nil, err
+			}
+			return New(filter, sink), nil
+		},
+	})	
+}
 
 /*
 	FilterConfig holds the parsed filter values from the CLI flags.
@@ -109,17 +142,20 @@ type TracerModule struct {
 	reader *ringbuf.Reader			/* reads events from the ring buffer */
 	Events chan events.SyscallEvent	/* userspace consumes from this channel */
 	filter FilterConfig				/* parsed filter configuration */
+	sink   output.EventSink			/* output sink for formatted event emission */
 }
 
 /*
 	Function which is essentially an allocator of TracerModule.
-	Accepts a FilterConfig to configure kernel-side and userspace filtering.
+	Accepts a FilterConfig to configure kernel-side and userspace filtering,
+	and an EventSink to decouple output formatting from the module.
 */
-func New(filter FilterConfig) *TracerModule {
+func New(filter FilterConfig, sink output.EventSink) *TracerModule {
 	return &TracerModule{
 		BaseProgram: loader.NewBaseProgram("syscall_tracer"),
 		Events:      make(chan events.SyscallEvent, 256),
 		filter:      filter,
+		sink:        sink,
 	}
 }
 
@@ -135,7 +171,7 @@ func New(filter FilterConfig) *TracerModule {
 */
 func (t *TracerModule) populateFilters() error {
 	var mask uint32
-	placeholder := uint8(1)
+	enable := uint8(1)
 
 	/*
 		The data type TracerObjects embeds TracerPrograms and TracerMaps.
@@ -160,7 +196,7 @@ func (t *TracerModule) populateFilters() error {
 	if len(t.filter.PIDs) > 0 {
 		mask |= 1
 		for _, pid := range t.filter.PIDs {
-			if err := t.objs.PidFilter.Update(pid, placeholder, ebpf.UpdateAny); err != nil {
+			if err := t.objs.PidFilter.Update(pid, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("syscall: set pid filter %d: %w", pid, err)
 			}
 		}
@@ -170,13 +206,13 @@ func (t *TracerModule) populateFilters() error {
 	if len(t.filter.UIDs) > 0 {
 		mask |= 2
 		for _, uid := range t.filter.UIDs {
-			if err := t.objs.UidFilter.Update(uid, placeholder, ebpf.UpdateAny); err != nil {
+			if err := t.objs.UidFilter.Update(uid, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("syscall: set uid filter %d: %w", uid, err)
 			}
 		}
 	}
  
-	/* Populate syscall number filter map — resolve names to numbers */
+	/* Populate syscall number filter map: resolve names to numbers */
 	if len(t.filter.Syscalls) > 0 {			/* check if the user specified particular syscall */
 		mask |= 4
 		for _, name := range t.filter.Syscalls {
@@ -184,7 +220,7 @@ func (t *TracerModule) populateFilters() error {
 			if !ok {
 				return fmt.Errorf("syscall: unknown syscall name %q", name)
 			}
-			if err := t.objs.SyscallFilter.Update(nr, placeholder, ebpf.UpdateAny); err != nil {
+			if err := t.objs.SyscallFilter.Update(nr, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("syscall: set syscall filter %q (%d): %w", name, nr, err)
 			}
 		}
@@ -354,16 +390,29 @@ func (t *TracerModule) Run(done <-chan struct{}) {
 			if !ok {
 				return
 			}
-			fmt.Printf("[%s] pid=%-6d uid=%-5d comm=%s syscall=%s\n",
-				e.Kind,
-				e.PID,
-				e.UID,
-				e.ProcessName(),
-				SyscallName(e.SyscallNr),
-			)
+			t.sink.Emit("syscall", syscallToFields(e))
 		case <-done:
 			return
 		}
+	}
+}
+
+/*
+	syscallToFields converts a SyscallEvent into a generic field map for the
+	output sink. This is the bridge between the typed event and the
+	format-agnostic sink pipeline.
+*/
+func syscallToFields(e events.SyscallEvent) map[string]interface{} {
+	return map[string]interface{}{
+		"kind":       e.Kind.String(),
+		"pid":        e.PID,
+		"tid":        e.TID,
+		"uid":        e.UID,
+		"gid":        e.GID,
+		"timestamp":  e.Timestamp,
+		"syscall_nr": e.SyscallNr,
+		"syscall":    SyscallName(e.SyscallNr),
+		"comm":       e.ProcessName(),
 	}
 }
 
@@ -391,11 +440,24 @@ func (t *TracerModule) poll() {
 		}
 
 		/* Userspace filter: comm name (substring match) */
-		if t.filter.CommName != "" && !strings.Contains(e.ProcessName(), t.filter.CommName) {
+		if !t.matchesFilter(e) {
 			continue
 		}
 
 		/* send the parsed message to the Events channel */
 		t.Events <- e
 	}
+}
+
+/*
+	matchesFilter applies userspace-level filters to a parsed event.
+	Returns true if the event should be forwarded to the Events channel.
+	Kernel-side filters (PID, UID, syscall nr) are handled in BPF maps
+	before the event reaches the ring buffer.
+*/
+func (t *TracerModule) matchesFilter(e events.SyscallEvent) bool {
+	if t.filter.CommName != "" && !strings.Contains(e.ProcessName(), t.filter.CommName) {
+		return false
+	}
+	return true
 }
