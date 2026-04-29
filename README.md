@@ -99,11 +99,14 @@ prompt where you can modify filters at runtime:
  
 ```
 ^C
---- tracing paused ---
+---  Veil Tracing Paused  ---
+
+Veil interactive control (type 'help' for commands, 'resume' to continue tracing, 'quit' to exit)
 veil $ add pid 1234
 OK
 veil $ resume
---- resumed (42 events dropped while paused) ---
+---  resumed (554 events dropped while paused)  ---
+...
 ```
  
 For external/scripted access, use `--control` to start a Unix socket:
