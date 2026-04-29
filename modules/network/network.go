@@ -46,7 +46,37 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/events"
 	"github.com/PranavRJoshi/Veil/internal/loader"
+	"github.com/PranavRJoshi/Veil/internal/output"
+	"github.com/PranavRJoshi/Veil/internal/registry"
 )
+
+/*
+	Register the network module with the global registry.
+*/
+func init() {
+	registry.Register(registry.ModuleInfo{
+		Name:        "network",
+		Description: "TCP connection lifecycle tracing (connect, accept, close)",
+		Flags: []registry.FlagDef{
+			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
+			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
+			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
+			{Name: "port", Description: "Filter by port number (comma-separated)", HasValue: true},
+		},
+		Factory: func(flags map[string]string, sinkIface interface{}) (interface{}, error) {
+			sink, ok := sinkIface.(output.EventSink)
+			if !ok {
+				return nil, fmt.Errorf("network: expected output.EventSink, got %T", sinkIface)
+			}
+			filter, err := ParseFilterConfig(flags)
+			if err != nil {
+				return nil, err
+			}
+			return New(filter, sink), nil
+		},
+	})
+}
+
 
 /*
 	FilterConfig holds the parsed filter values from CLI flags.
@@ -117,16 +147,18 @@ type NetworkModule struct {
 	reader         *ringbuf.Reader
 	Events         chan events.NetworkEvent
 	filter         FilterConfig
+	sink           output.EventSink
 }
 
 /*
 	New creates a NetworkModule with the given filter configuration.
 */
-func New(filter FilterConfig) *NetworkModule {
+func New(filter FilterConfig, sink output.EventSink) *NetworkModule {
 	return &NetworkModule{
 		BaseProgram: loader.NewBaseProgram("network_tracer"),
 		Events:      make(chan events.NetworkEvent, 256),
 		filter:      filter,
+		sink:        sink,
 	}
 }
 
@@ -139,12 +171,12 @@ func New(filter FilterConfig) *NetworkModule {
 */
 func (n *NetworkModule) populateFilters() error {
 	var mask uint32
-	placeholder := uint8(1)
+	enable := uint8(1)
 
 	if len(n.filter.PIDs) > 0 {
 		mask |= 1
 		for _, pid := range n.filter.PIDs {
-			if err := n.objs.PidFilter.Update(pid, placeholder, ebpf.UpdateAny); err != nil {
+			if err := n.objs.PidFilter.Update(pid, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("network: set pid filter %d: %w", pid, err)
 			}
 		}
@@ -153,7 +185,7 @@ func (n *NetworkModule) populateFilters() error {
 	if len(n.filter.UIDs) > 0 {
 		mask |= 2
 		for _, uid := range n.filter.UIDs {
-			if err := n.objs.UidFilter.Update(uid, placeholder, ebpf.UpdateAny); err != nil {
+			if err := n.objs.UidFilter.Update(uid, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("network: set uid filter %d: %w", uid, err)
 			}
 		}
@@ -162,7 +194,7 @@ func (n *NetworkModule) populateFilters() error {
 	if len(n.filter.Ports) > 0 {
 		mask |= 4
 		for _, port := range n.filter.Ports {
-			if err := n.objs.PortFilter.Update(port, placeholder, ebpf.UpdateAny); err != nil {
+			if err := n.objs.PortFilter.Update(port, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("network: set port filter %d: %w", port, err)
 			}
 		}
@@ -286,22 +318,31 @@ func (n *NetworkModule) Run(done <-chan struct{}) {
 			if !ok {
 				return
 			}
-			fmt.Printf("[%s] pid=%-6d uid=%-5d comm=%-16s %-12s %s:%d -> %s:%d (%s->%s)\n",
-				e.Kind,
-				e.PID,
-				e.UID,
-				e.ProcessName(),
-				EvtTypeName(e.EvtType),
-				FormatIPv4(e.SrcAddr),
-				e.SrcPort,
-				FormatIPv4(e.DstAddr),
-				e.DstPort,
-				TCPStateName(e.OldState),
-				TCPStateName(e.NewState),
-			)
+			n.sink.Emit("network", networkToFields(e))
 		case <-done:
 			return
 		}
+	}
+}
+
+/*
+	networkToFields converts a NetworkEvent into a generic field map
+	for the output sink.
+*/
+func networkToFields(e events.NetworkEvent) map[string]interface{} {
+	return map[string]interface{}{
+		"kind":     e.Kind.String(),
+		"pid":      e.PID,
+		"uid":      e.UID,
+		"timestamp": e.Timestamp,
+		"comm":     e.ProcessName(),
+		"evt_type": EvtTypeName(e.EvtType),
+		"saddr":    FormatIPv4(e.SrcAddr),
+		"sport":    e.SrcPort,
+		"daddr":    FormatIPv4(e.DstAddr),
+		"dport":    e.DstPort,
+		"oldstate": TCPStateName(e.OldState),
+		"newstate": TCPStateName(e.NewState),
 	}
 }
 
@@ -322,10 +363,21 @@ func (n *NetworkModule) poll() {
 		}
 
 		/* Userspace filter: comm name (substring match) */
-		if n.filter.CommName != "" && !strings.Contains(e.ProcessName(), n.filter.CommName) {
+		if !n.matchesFilter(e) {
 			continue
 		}
 
 		n.Events <- e
 	}
+}
+
+/*
+	matchesFilter applies userspace-level filters to a parsed event.
+	Returns true if the event should be forwarded to the Events channel.
+*/
+func (n *NetworkModule) matchesFilter(e events.NetworkEvent) bool {
+	if n.filter.CommName != "" && !strings.Contains(e.ProcessName(), n.filter.CommName) {
+		return false
+	}
+	return true
 }
