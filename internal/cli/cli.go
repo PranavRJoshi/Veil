@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/PranavRJoshi/Veil/internal/registry"
 )
 
 /*
@@ -13,17 +15,9 @@ import (
 type Config struct {
 	Module       string            /* "syscall", "files", etc. */
 	ModuleFlags  map[string]string /* per-module key=value flags */
+	ControlPath  string            /* --control <path>: Unix socket */
 	ListModules  bool              /* --list-modules */
 	ShowHelp     bool              /* --help or -h */
-}
-
-/*
-	Currently supported modules.
-*/
-var knownModules = map[string]bool{
-	"syscall":	true,
-	"files":	true,
-	"network":	true,
 }
 
 /*
@@ -35,6 +29,8 @@ func usage() {
 Global flags:
   --module <name>    Select the module to run (required)
   --list-modules     List available modules and exit
+  --output <format>  Output format: text (default), json
+  --control <path>   Start a Unix socket control server at <path>
   -h, --help         Show this help message
 
 Common filter flags:
@@ -93,6 +89,20 @@ func Parse(args []string) (Config, error) {
 				}
 				i++
 				cfg.Module = args[i]
+
+			case arg == "--output":
+				if i+1 >= len(args) {
+					return cfg, fmt.Errorf("--output requires a value")
+				}
+				i++
+				cfg.ModuleFlags["output"] = args[i]
+
+			case arg == "--control":
+				if i+1 >= len(args) {
+					return cfg, fmt.Errorf("--control requires a socket path")
+				}
+				i++
+				cfg.ControlPath = args[i]
 
 			/*
 				Short-form: -p, -n, -s all take a value argument.
@@ -165,8 +175,8 @@ func Parse(args []string) (Config, error) {
 		return cfg, fmt.Errorf("--module is required; use --list-modules to see available modules")
 	}
 
-	/* check if the module is supported by Veil */
-	if !knownModules[cfg.Module] {
+	/* Validate the module name against the registry */
+	if _, ok := registry.Get(cfg.Module); !ok {
 		return cfg, fmt.Errorf("unknown module %q; use --list-modules to see available modules", cfg.Module)
 	}
 
@@ -178,9 +188,9 @@ func Parse(args []string) (Config, error) {
 */
 func PrintModules() {
 	fmt.Println("Available modules:")
-	fmt.Println("  syscall   - Trace system call events (raw_syscalls:sys_enter)")
-	fmt.Println("  files     - Trace file access events (vfs_open, vfs_read, vfs_write)")
-	fmt.Println("  network   - TCP connection lifecycle tracing (connect, accept, close)")
+	for _, info := range registry.All() {
+		fmt.Printf("  %-12s %s\n", info.Name, info.Description)
+	}
 	fmt.Println()
 	fmt.Println("Planned modules:")
 	fmt.Println("  scheduler - CPU run queue latency profiling")
