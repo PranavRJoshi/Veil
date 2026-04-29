@@ -29,7 +29,7 @@ func parseEvent(raw []byte) (events.SyscallEvent, error) {
 		return events.SyscallEvent{}, fmt.Errorf("short read: %d bytes", len(raw))
 	}
 
-	// LittleEndian because x86_64 — we'll make this configurable later
+	// LittleEndian because x86_64: we'll make this configurable later
 	se := syscallEvent{
 		PID:       binary.LittleEndian.Uint32(raw[0:4]),
 		TID:       binary.LittleEndian.Uint32(raw[4:8]),
