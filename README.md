@@ -94,15 +94,15 @@ sudo ./bin/veil --module network --output json >> /var/log/veil-network.jsonl
 
 ### Interactive Control
  
-Press **Ctrl+C** during tracing to pause output and enter a control
+Press **CTRL-C** during tracing to pause output and enter a control
 prompt where you can modify filters at runtime:
  
 ```
 ^C
 --- tracing paused ---
-veil> add pid 1234
+veil $ add pid 1234
 OK
-veil> resume
+veil $ resume
 --- resumed (42 events dropped while paused) ---
 ```
  
