@@ -256,3 +256,95 @@ func TestParseControlPathNotSetByDefault(t *testing.T) {
 		t.Errorf("expected empty ControlPath by default, got %q", cfg.ControlPath)
 	}
 }
+
+/*
+	Enrichment flag (--enrich)
+*/
+ 
+func TestParseEnrichFlag(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--enrich", "time,proc"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.EnrichFlags != "time,proc" {
+		t.Errorf("expected EnrichFlags 'time,proc', got %q", cfg.EnrichFlags)
+	}
+}
+ 
+func TestParseEnrichAll(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--enrich", "all"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.EnrichFlags != "all" {
+		t.Errorf("expected EnrichFlags 'all', got %q", cfg.EnrichFlags)
+	}
+}
+ 
+func TestParseEnrichFlagMissingValue(t *testing.T) {
+	_, err := Parse([]string{"--module", "syscall", "--enrich"})
+	if err == nil {
+		t.Fatal("expected error for --enrich without value")
+	}
+}
+ 
+func TestParseEnrichNotSetByDefault(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.EnrichFlags != "" {
+		t.Errorf("expected empty EnrichFlags by default, got %q", cfg.EnrichFlags)
+	}
+}
+ 
+/*
+	Multi-module (--module name,name)
+*/
+ 
+func TestParseMultiModule(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall,network"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Module != "syscall,network" {
+		t.Errorf("expected 'syscall,network', got %q", cfg.Module)
+	}
+}
+ 
+func TestParseMultiModuleWithSpaces(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall, network"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Module != "syscall, network" {
+		t.Errorf("expected 'syscall, network', got %q", cfg.Module)
+	}
+}
+ 
+func TestParseMultiModuleOneInvalid(t *testing.T) {
+	_, err := Parse([]string{"--module", "syscall,errmod"})
+	if err == nil {
+		t.Fatal("expected error for unknown module in multi-module list")
+	}
+}
+ 
+func TestParseMultiModuleAllThree(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall,files,network", "--pid", "1234"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Module != "syscall,files,network" {
+		t.Errorf("expected 'syscall,files,network', got %q", cfg.Module)
+	}
+	if cfg.ModuleFlags["pid"] != "1234" {
+		t.Errorf("expected pid '1234', got %q", cfg.ModuleFlags["pid"])
+	}
+}
+ 
+func TestParseMultiModuleEmptyName(t *testing.T) {
+	_, err := Parse([]string{"--module", "syscall,,network"})
+	if err == nil {
+		t.Fatal("expected error for empty module name in list")
+	}
+}
