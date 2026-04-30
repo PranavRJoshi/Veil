@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/PranavRJoshi/Veil/internal/cli"
 	"github.com/PranavRJoshi/Veil/internal/control"
-	"github.com/PranavRJoshi/Veil/internal/loader"
+	"github.com/PranavRJoshi/Veil/internal/enrich"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/PranavRJoshi/Veil/internal/runner"
 
 	/*
 		Blank imports trigger init() in each module package, which
@@ -21,14 +23,6 @@ import (
 	_ "github.com/PranavRJoshi/Veil/modules/files"
 	_ "github.com/PranavRJoshi/Veil/modules/network"
 )
-
-/*
-	Runner is the interface that modules implement for event consumption.
-	Every module already has a Run(done <-chan struct{}) method.
-*/
-type Runner interface {
-	Run(done <-chan struct{})
-}
 
 func main() {
 	cfg, err := cli.Parse(os.Args[1:])
@@ -51,6 +45,18 @@ func main() {
 	/*
 		Construct output pipeline. PausableSink wraps the format sink so we can
 		suspend output during interactive control.
+
+		baseSink (TextSink or JSONSink)
+			|
+			+-> wrapped by PausableSink (for interactive control)
+					|
+					+-> wrapped by EnrichSink (optional)
+							|
+							+-> passed to module factories as their output target
+
+		The enrichment layer sits between the pausable sink and the modules.
+		When paused, events are dropped at the PausableSink level, before
+		enrichment runs, thus avoiding unnecessary /proc reads during pause.
 	*/
 	var baseSink output.EventSink
 	switch cfg.ModuleFlags["output"] {
@@ -63,63 +69,95 @@ func main() {
 	defer baseSink.Close()
 
 	/*
-		Look up the module from the registry. The registry is populated
-		by init() calls in each module package (triggered by blank imports).
+		Build the enrichment pipeline when --enrich option is specified.
+		Enrichers are sink middleware that add derived fields to events
+		before they reach the output formatter. Enriched sinks wrap pausable,
+		so all modules share the same enrichment chain regardless of count.
 	*/
-	info, ok := registry.Get(cfg.Module)
-	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown module %q; use --list-modules to see available modules\n", cfg.Module)
-		os.Exit(1)
+	var sink output.EventSink = pausable
+	if cfg.EnrichFlags != "" {
+		var opts []enrich.EnricherOption
+		for _, name := range strings.Split(cfg.EnrichFlags, ",") {
+			switch strings.TrimSpace(name) {
+				case "time":
+					opts = append(opts, enrich.WithTimestamp())
+				case "proc":
+					opts = append(opts, enrich.WithProcName())
+				case "user":
+					opts = append(opts, enrich.WithUserName())
+				case "all":
+					opts = append(opts, enrich.WithTimestamp(),
+								enrich.WithProcName(), enrich.WithUserName())
+				default:
+					fmt.Fprintf(os.Stderr,
+					"warning: unknown enricher %q (valid: time, proc, user, all)\n",
+					name)
+					
+			}
+		}
+		if len(opts) > 0 {
+			sink = enrich.Chain(pausable, opts...)
+		}
 	}
 
 	/*
-		Create the module via its factory function. The factory
-		handles ParseFilterConfig + New(filter, sink) internally.
+		Parse the module list and create each module via its registry factory.
+		Supports single or comma-separated module names. The same ModuleFlags
+		map is passed to every factory--each module's ParseFilterConfig reads
+		only the keys it understands and ignores the rest.
 	*/
-	modIface, err := info.Factory(cfg.ModuleFlags, pausable)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+	moduleNames := parseModuleNames(cfg.Module)
+	var modules []runner.Module
+
+	for _, name := range moduleNames {
+		info, _ := registry.Get(name)	/* already validated by CLI */
+
+		modIface, err := info.Factory(cfg.ModuleFlags, sink)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error creating module: %v\n", err)
+			os.Exit(1)
+		}
+
+		mod, ok := modIface.(runner.Module)
+		if !ok {
+			fmt.Fprintf(os.Stderr,
+			"module %s does not implement runner.Module\n",
+			name)
+			os.Exit(1)
+		}
+		modules = append(modules, mod)
 	}
-	mod := modIface.(loader.Program)
 
 	/*
-		Register with the manager and load the BPF program into the kernel.
+		Use MultiRunner for both single and multi-module modes. LoadAll loads
+		modules sequentially with fail-fast rollback: if module B fails to
+		load, module A is automatically closed. CloseAll shuts down in reverse
+		order (LIFO).
 	*/
-	m := loader.NewManager()
-	m.Register(mod)
-
-	if err := m.LoadAll(); err != nil {
+	mr := runner.New(modules...)
+	if err := mr.LoadAll(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	defer m.CloseAll()
+	defer mr.CloseAll()
 
 	/*
 		done is closed when the user sends SIGINT/SIGTERM. Module
 		Run methods select on this channel to know when to exit.
+		RunAll starts each module's Run() in its own goroutine and
+		blocks until done is closed and all goroutines return.
 	*/
 	done := make(chan struct{})
+	go mr.RunAll(done)
 
 	/*
-		Start the module's event consumption loop as a goroutine.
-		The type assertion to Runner is safe; every module has Run().
+		Build the control handler. Until modules implement MapUpdater, we use
+		a stub that reports status for all loaded modules but rejects filter
+		modifications. When MapUpdater is implemented, this will become a
+		routing dispatcher keyed by module name.
 	*/
-	if r, ok := modIface.(Runner); ok {
-		go r.Run(done)
-	}
-
-	/*
-		Build the control handler. If the module implements MapUpdater, use it
-		for real filter modifications. Otherwise, use a stub that reports
-		status but rejects filter changes.
-	*/
-	var handler *control.Handler
-	if updater, ok := modIface.(control.MapUpdater); ok {
-		handler = control.NewHandler(updater)
-	} else {
-		handler = control.NewHandler(&stubUpdater{module: cfg.Module})
-	}
+	moduleLabel := strings.Join(mr.Names(), ", ")
+	handler := control.NewHandler(&stubUpdater{module: moduleLabel})
 
 	/*
 		Start socket server if '--control' was specified
@@ -144,7 +182,7 @@ func main() {
 		"quit"/exit   - shut down
 		Second CTRL-C - shut down (while in interactive mode)
 	*/
-	sigCh := make(chan os.Signal, 1)
+	sigCh := make(chan os.Signal, 1)	/* buffered channel */
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	for {
@@ -157,7 +195,7 @@ func main() {
 
 		/* SIGINT: pause output and enter interactive mode */
 		pausable.Pause()
-		fmt.Fprintf(os.Stderr, "\n---  Veil Tracing Paused  ---\n")
+		fmt.Fprintf(os.Stderr, "\n---  Veil Tracing Paused [%s]  ---\n", moduleLabel)
 
 		/*
 			In interactive mode, a second CTRL-C should quit rather than
@@ -166,6 +204,19 @@ func main() {
 			check a flag.
 		*/
 		interruptedDuringPrompt := make(chan struct{}, 1)
+		/*
+			stopMonitor exists to remedy the problem observed during program
+			runtime. Without this, the following case could be noticed: after
+			entering interactive mode and using the "resume" command, the
+			program would consume the subsequent interrupt signal instead of
+			entering the interactive mode. Once resultCh receives the data and
+			assigns that value to result, stopMonitor is closed, which
+			signals the goroutine below to return--terminate the gorotuine.
+			If stopMonitor was not defined and not closed below, a race
+			condition could occur where the goroutine below and the assignment
+			to sig above could be waiting for the same channel to have some
+			data.
+		*/
 		stopMonitor := make(chan struct{})
 		go func() {
 			select {
@@ -222,22 +273,27 @@ func main() {
 }
 
 /*
-	printModules lists all registered modules with their descriptions,
-	built dynamically from the registry.
+	parseModuleNames splits a comma-separated module string into trimmed
+	individual names. For a single module, returns a one-element slice.
 */
-func printModules() {
-	fmt.Println("Available modules:")
-	for _, info := range registry.All() {
-		fmt.Printf("  %-12s %s\n", info.Name, info.Description)
+func parseModuleNames(raw string) []string {
+	parts := strings.Split(raw, ",")
+	names := make([]string, 0, len(parts))
+	for _, p := range parts {
+		name := strings.TrimSpace(p)
+		if name != "" {
+			names = append(names, name)
+		}
 	}
-	fmt.Println()
-	fmt.Println("Planned modules:")
-	fmt.Println("  scheduler   CPU run queue latency profiling")
-	fmt.Println("  memory      OOM event inspection and page fault tracing")
+	return names
 }
 
-// stubUpdater is used when the module doesn't implement MapUpdater.
-// It allows status queries but rejects filter modifications.
+/*
+	stubUpdater is used when module(s) don't implement MapUpdater.
+	It allows status queries but rejects filter modifications.
+	When modules implement MapUpdater, this will be replaced by a
+	routing dispatcher keyed by module name.
+*/
 type stubUpdater struct {
 	module string
 }
