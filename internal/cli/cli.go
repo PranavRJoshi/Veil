@@ -13,9 +13,10 @@ import (
 	command line argument.
 */
 type Config struct {
-	Module       string            /* "syscall", "files", etc. */
-	ModuleFlags  map[string]string /* per-module key=value flags */
+	Module       string            /* comma-separated module names */
+	ModuleFlags  map[string]string /* shared module key=value flags */
 	ControlPath  string            /* --control <path>: Unix socket */
+	EnrichFlags  string            /* --enrich <opts>: time,proc,user,all */
 	ListModules  bool              /* --list-modules */
 	ShowHelp     bool              /* --help or -h */
 }
@@ -24,12 +25,13 @@ type Config struct {
 	Print out the usage message to the standard error stream.
 */
 func usage() {
-	u := `Usage: veil --module <name> [module-flags...]
+	u := `Usage: veil --module <name[,name...>] [module-flags...]
 
 Global flags:
   --module <name>    Select the module to run (required)
   --list-modules     List available modules and exit
   --output <format>  Output format: text (default), json
+  --enrich <opts>    Enable enrichment: time, proc, user, all (comma-separated)
   --control <path>   Start a Unix socket control server at <path>
   -h, --help         Show this help message
 
@@ -104,6 +106,13 @@ func Parse(args []string) (Config, error) {
 				i++
 				cfg.ControlPath = args[i]
 
+			case arg == "--enrich":
+				if i+1 >= len(args) {
+					return cfg, fmt.Errorf("--enrich requires a value (time, proc, user, all)")
+				}
+				i++
+				cfg.EnrichFlags = args[i]
+
 			/*
 				Short-form: -p, -n, -s all take a value argument.
 				Long-form: --pid, --name, --syscall, --op, --path
@@ -132,6 +141,7 @@ func Parse(args []string) (Config, error) {
 				i++
 				cfg.ModuleFlags["name"] = args[i]
 
+		/* syscall module specific */
 			case arg == "-s" || arg == "--syscall":
 				if i+1 >= len(args) {
 					return cfg, fmt.Errorf("%s requires a value", arg)
@@ -139,6 +149,7 @@ func Parse(args []string) (Config, error) {
 				i++
 				cfg.ModuleFlags["syscall"] = args[i]
 
+		/* file module specific */
 			case arg == "--op":
 				if i+1 >= len(args) {
 					return cfg, fmt.Errorf("--op requires a value")
@@ -153,6 +164,7 @@ func Parse(args []string) (Config, error) {
 				i++
 				cfg.ModuleFlags["file"] = args[i]
 
+		/* network module specific */
 			case arg == "--port":
 				if i+1 >= len(args) {
 					return cfg, fmt.Errorf("--port requires a value")
@@ -175,10 +187,21 @@ func Parse(args []string) (Config, error) {
 		return cfg, fmt.Errorf("--module is required; use --list-modules to see available modules")
 	}
 
-	/* Validate the module name against the registry */
-	if _, ok := registry.Get(cfg.Module); !ok {
-		return cfg, fmt.Errorf("unknown module %q; use --list-modules to see available modules", cfg.Module)
+	/*
+		Validate the module name against the registry.
+		Supports comma-separated lists for multi-module mode
+		(e.g., "syscall,network").
+	*/
+	for _, name := range strings.Split(cfg.Module, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return cfg, fmt.Errorf("empty module name in --module list")
+		}
+		if _, ok := registry.Get(name); !ok {
+			return cfg, fmt.Errorf("unknown module %q; use --list-modules to see available modules", name)
+		}
 	}
+
 
 	return cfg, nil
 }
