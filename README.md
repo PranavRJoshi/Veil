@@ -77,9 +77,23 @@ sudo ./bin/veil --module network --port 80,443
 **Text** (default), one line per event:
  
 ```
-[syscall] pid=1234   uid=0     comm=bash syscall=openat
-[file access] pid=5678   uid=1000  comm=nginx           op=read   filename=nginx.conf
-[network] pid=1234   uid=0     comm=curl             CONNECT      10.0.2.15:54268 -> 93.184.216.34:80 (CLOSE->SYN_SENT)
+systemd-journal  PID=432    TID=432    UID=0     GID=0     syscall=ioctl(29)
+systemd-journal  PID=432    TID=432    UID=0     GID=0     syscall=ioctl(29)
+systemd-journal  PID=432    TID=432    UID=0     GID=0     syscall=ioctl(29)
+systemd-journal  PID=432    TID=432    UID=0     GID=0     syscall=ioctl(29)
+systemd-journal  PID=432    TID=432    UID=0     GID=0     syscall=ioctl(29)
+...
+cat              PID=245377 UID=502   op=open  filename=hosts
+cat              PID=245377 UID=502   op=read  filename=hosts
+cat              PID=245377 UID=502   op=read  filename=hosts
+...
+...
+nc               PID=245466 LISTEN       0.0.0.0:1234 -> 0.0.0.0:0 [CLOSE->LISTEN]
+nc               PID=245471 CONNECT      127.0.0.1:5432 -> 127.0.0.1:1234 [CLOSE->SYN_SENT]
+nc               PID=245471 ESTABLISHED  127.0.0.1:5432 -> 127.0.0.1:1234 [SYN_SENT->ESTABLISHED]
+nc               PID=245466 ESTABLISHED  127.0.0.1:1234 -> 127.0.0.1:5432 [SYN_RECV->ESTABLISHED]
+nc               PID=245471 CLOSE        127.0.0.1:5432 -> 127.0.0.1:1234 [ESTABLISHED->FIN_WAIT1]
+nc               PID=245466 CLOSE        127.0.0.1:1234 -> 127.0.0.1:5432 [ESTABLISHED->CLOSE_WAIT]
 ```
  
 **JSON** (`--output json`), one JSON object per line, suitable for
