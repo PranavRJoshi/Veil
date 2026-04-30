@@ -92,6 +92,88 @@ func TestNetworkTextFormat_RoundTrip(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Enriched field formatting: verify time, username, proc_name in output
+// ---------------------------------------------------------------------------
+ 
+func TestSyscallTextFormat_WithEnrichment(t *testing.T) {
+	fields := map[string]interface{}{
+		"kind": "syscall", "pid": uint32(1234), "tid": uint32(1234),
+		"uid": uint32(0), "gid": uint32(0), "comm": "bash",
+		"syscall": "openat", "syscall_nr": uint64(257),
+		"time": "14:32:05.123", "username": "root", "proc_name": "bash",
+	}
+ 
+	got := SyscallTextFormat("syscall", fields)
+ 
+	if !strings.HasPrefix(got, "[14:32:05.123] ") {
+		t.Errorf("expected time prefix, got %q", got)
+	}
+	if !strings.Contains(got, "user=root") {
+		t.Errorf("expected user=root, got %q", got)
+	}
+	if !strings.Contains(got, "proc=bash") {
+		t.Errorf("expected proc=bash, got %q", got)
+	}
+}
+ 
+func TestSyscallTextFormat_WithoutEnrichment(t *testing.T) {
+	fields := map[string]interface{}{
+		"kind": "syscall", "pid": uint32(1234), "tid": uint32(1234),
+		"uid": uint32(0), "gid": uint32(0), "comm": "bash",
+		"syscall": "openat", "syscall_nr": uint64(257),
+	}
+ 
+	got := SyscallTextFormat("syscall", fields)
+ 
+	if strings.Contains(got, "[") {
+		t.Errorf("should not have time prefix without enrichment: %q", got)
+	}
+	if strings.Contains(got, "user=") {
+		t.Errorf("should not have user= without enrichment: %q", got)
+	}
+	if strings.Contains(got, "proc=") {
+		t.Errorf("should not have proc= without enrichment: %q", got)
+	}
+}
+ 
+func TestFilesTextFormat_WithEnrichment(t *testing.T) {
+	fields := map[string]interface{}{
+		"kind": "file access", "pid": uint32(5678), "uid": uint32(1000),
+		"comm": "nginx", "op": "read", "filename": "nginx.conf",
+		"time": "10:00:00.000", "username": "www-data",
+	}
+ 
+	got := FilesTextFormat("files", fields)
+ 
+	if !strings.HasPrefix(got, "[10:00:00.000] ") {
+		t.Errorf("expected time prefix, got %q", got)
+	}
+	if !strings.Contains(got, "user=www-data") {
+		t.Errorf("expected user=www-data, got %q", got)
+	}
+}
+ 
+func TestNetworkTextFormat_WithEnrichment(t *testing.T) {
+	fields := map[string]interface{}{
+		"kind": "network", "pid": uint32(100), "uid": uint32(0),
+		"comm": "curl", "evt_type": "CONNECT",
+		"saddr": "127.0.0.1", "sport": uint16(54268),
+		"daddr": "93.184.216.34", "dport": uint16(80),
+		"oldstate": "CLOSE", "newstate": "SYN_SENT",
+		"time": "09:15:30.456", "proc_name": "curl",
+	}
+ 
+	got := NetworkTextFormat("network", fields)
+ 
+	if !strings.HasPrefix(got, "[09:15:30.456] ") {
+		t.Errorf("expected time prefix, got %q", got)
+	}
+	if !strings.Contains(got, "proc=curl") {
+		t.Errorf("expected proc=curl, got %q", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // DispatchTextFormat: dispatches to correct module formatter
 // ---------------------------------------------------------------------------
 
