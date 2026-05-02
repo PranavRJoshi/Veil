@@ -152,6 +152,7 @@ type FilesModule struct {
 	Events		chan events.FileEvent
 	filter      FilterConfig
 	sink		output.EventSink
+	updater     *mapUpdaterState
 }
 
 /*
@@ -236,6 +237,11 @@ func (f *FilesModule) Load() error {
 	if err := f.populateFilters(); err != nil {
 		return err
 	}
+
+	/*
+		Initialize MapUpdater for runtime filter control
+	*/
+	f.initMapUpdater()
 
 	var err error
 	/*
@@ -323,13 +329,13 @@ func (f *FilesModule) Close() error {
 func (f *FilesModule) Run(done <-chan struct{}) {
 	for {
 		select {
-		case e, ok := <-f.Events:
-			if !ok {
+			case e, ok := <-f.Events:
+				if !ok {
+					return
+				}
+				f.sink.Emit("files", filesToFields(e))
+			case <-done:
 				return
-			}
-			f.sink.Emit("files", filesToFields(e))
-		case <-done:
-			return
 		}
 	}
 }
@@ -384,6 +390,7 @@ func (f *FilesModule) matchesFilter(e events.FileEvent) bool {
 	if f.filter.FileName != "" && !strings.Contains(e.FileName, f.filter.FileName) {
 		return false
 	}
+
 	return true
 }
 
