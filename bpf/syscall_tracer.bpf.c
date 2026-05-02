@@ -144,12 +144,20 @@ int trace_syscall_enter(struct trace_event_raw_sys_enter *ctx)
 	__u64 nr		= ctx->id;
 
 	/*
-     * Read the filter configuration bitmask. If any filter bit is set,
-     * check the corresponding filter map. If the map lookup fails (key
-     * not present), the event does not match and we return early.
+     * Read the filter configuration bitmask. If any filter bit is set, check
+	 * the corresponding filter map. If the map lookup fails (key not present),
+	 * the event does not match and we return early.
      *
-     * This check happens BEFORE bpf_ringbuf_reserve to avoid wasting
-     * ring buffer space on events that will be discarded.
+     * This check happens before bpf_ringbuf_reserve to avoid wasting ring buffer
+	 * space on events that will be discarded.
+	 *
+	 * Notice the side-effect of this implementation. Suppose that we have set
+	 * the filter bit for PID filter but did not assign any filter on the map.
+	 * For such cases, it will drop every syscall events. This should be
+	 * taken into consideration since now we allow the user to update the map
+	 * at runtime using MapUpdater module. Since the filter configuration
+	 * logic is identical for other modules, i.e., files and network currently,
+	 * this applies to them as well.
      */
     __u32 cfg_key = 0;
     __u32 *cfg = bpf_map_lookup_elem(&filter_cfg, &cfg_key);
