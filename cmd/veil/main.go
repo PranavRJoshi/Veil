@@ -157,7 +157,8 @@ func main() {
 		routing dispatcher keyed by module name.
 	*/
 	moduleLabel := strings.Join(mr.Names(), ", ")
-	handler := control.NewHandler(&stubUpdater{module: moduleLabel})
+	updater := buildUpdater(modules, moduleNames)
+	handler := control.NewHandler(updater)
 
 	/*
 		Start socket server if '--control' was specified
@@ -172,7 +173,9 @@ func main() {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Veil [%s] running, press CTRL-C to pause and modify filters\n", cfg.Module)
+	fmt.Fprintf(os.Stderr,
+	"Veil [%s] running, press CTRL-C to pause and modify filters\n",
+	cfg.Module)
 
 	/*
 		Two-stage signal handling:
@@ -286,6 +289,192 @@ func parseModuleNames(raw string) []string {
 		}
 	}
 	return names
+}
+
+/*
+	buildUpdater constructs a MapUpdater from the loaded modules. If only one
+	module is loaded and it implements MapUpdater, use it directly (no module
+	prefix needed in commands). For multiple modules, build a 
+	compositeUpdater that dispatches by module name.
+
+	If a module doesn't implement MapUpdater, it gets a stub entry that reports
+	status but rejects filter modificaiton.
+*/
+func buildUpdater(modules []runner.Module, names []string) control.MapUpdater {
+	updaters := make(map[string]control.MapUpdater, len(modules))
+	for i, mod := range modules {
+		if mu, ok := mod.(control.MapUpdater); ok {
+			updaters[names[i]] = mu
+		} else {
+			updaters[names[i]] = &stubUpdater{module: names[i]}
+		}
+	}
+
+	/*
+		Single module mode: use the module's updater directly so commands like
+		"add pid 1234" work without a module prefix.
+	*/
+	if len(updaters) == 1 {
+		for _, u := range updaters {
+			return u
+		}
+	}
+
+	return &compositeUpdater{updaters: updaters}
+}
+
+/*
+	compositeUpdater dispatches control commands to the correct module's
+	MapUpdater based on a module prefix in the map name.
+ 
+	Plain map name ("pid", "port"):
+		Routes via mapOwnership. Shared maps (pid, uid) are sent to all lodaded
+		modules. Module-specific maps (syscall, port) are sent to their owner only.
+
+	Module-qualified map name ("network.port", "syscall.pid"):
+		Routes directly to the named module. This allows targeting a specific
+		module's map in multi-module mode, e.g., adding a PID filter only to
+		the network module without affecting syscall.
+		The Handler builds these from 4-part commands (see HandleCommand())
+*/
+type compositeUpdater struct {
+	updaters map[string]control.MapUpdater
+}
+ 
+/*
+	mapOwnership defines which modules own which map names.
+	"pid" and "uid" are universal--all modules have them.
+	"syscall" is syscall-only, "port" is network-only.
+*/
+var mapOwnership = map[string][]string{
+	"pid":     {"syscall", "files", "network"},
+	"uid":     {"syscall", "files", "network"},
+	"syscall": {"syscall"},
+	"port":    {"network"},
+}
+
+/*
+	resolveTargets determines which modules and what map name have to use for
+	a given (possibly qualified) map name.
+
+	NOTE: On current implementation, its redundant to check for single module
+	since buildUpdater() only creates compositeUpdater service when user requests
+	for multiple module. The base MapUdpater for runners module is only used, so
+	none of compositeUpdater will be issued unless a request was made to use
+	multiple eBPF programs.
+
+	"pid"           -> targets all loaded modules, map name "pid"
+	"network.port"  -> targets only network module, map name "port"
+	"files.uid"     -> targets only file module, map name "uid"
+*/
+func (c *compositeUpdater) resolveTargets(mapName string) (targets []string, realMap string, err error) {
+	if dot := strings.IndexByte(mapName, '.'); dot >= 0 {
+		/* Module-qualified: check if loaded*/
+		modName := mapName[:dot]
+		realMap = mapName[dot+1:]
+		if _, exists := c.updaters[modName]; !exists {
+			return nil, "", fmt.Errorf("module %q is not loaded (loaded: %s)", modName, strings.Join(c.loadedNames(), ", "))
+		}
+		return []string{modName}, realMap, nil
+	}
+
+	/* Plain map name: route via ownership */
+	owners, ok := mapOwnership[mapName]
+	if !ok {
+		return nil, "", fmt.Errorf("unknown filter map %q (use help)", mapName)
+	}
+
+	return owners, mapName, nil
+}
+
+func (c *compositeUpdater) loadedNames() []string {
+	names := make([]string, 0, len(c.updaters))
+	for name := range c.updaters {
+		names = append(names, name)
+	}
+
+	return names
+}
+ 
+func (c *compositeUpdater) AddFilter(mapName string, key uint64) error {
+	targets, realMap, err := c.resolveTargets(mapName)
+	if err != nil {
+		return err
+	}
+	var lastErr error
+	for _, name := range targets {
+		if u, exists := c.updaters[name]; exists {
+			if err := u.AddFilter(realMap, key); err != nil {
+				lastErr = err
+			}
+		}
+	}
+
+	return lastErr
+}
+ 
+func (c *compositeUpdater) DelFilter(mapName string, key uint64) error {
+	targets, realMap, err := c.resolveTargets(mapName)
+	if err != nil {
+		return err
+	}
+
+	var delErr error
+	for _, name := range targets {
+		if u, exists := c.updaters[name]; exists {
+			if err := u.DelFilter(realMap, key); err != nil {
+				delErr = err
+			} else {
+				fmt.Printf("Deleted key %v for map %s (%v module)\n", key, mapName, name)
+			}
+		}
+	}
+
+	return delErr
+}
+ 
+func (c *compositeUpdater) ListFilters(mapName string) ([]uint64, error) {
+	targets, realMap, err := c.resolveTargets(mapName)
+	if err != nil {
+		return nil, err
+	}
+	/*
+		List from the first loaded target. For shared maps via plain names,
+		this list from one module (they share the same filter semantics). For
+		qualified names, it lists from the specified module.
+	*/
+	for _, name := range targets {
+		if u, exists := c.updaters[name]; exists {
+			return u.ListFilters(realMap)
+		}
+	}
+
+	return nil, fmt.Errorf("no loaded module owns map %q", mapName)
+}
+ 
+func (c *compositeUpdater) ClearFilters(mapName string) error {
+	targets, realMap, err := c.resolveTargets(mapName)
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, name := range targets {
+		if u, exists := c.updaters[name]; exists {
+			/* TODO: Check if we really need to check firstErr being nil */
+			if err := u.ClearFilters(realMap); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+ 
+func (c *compositeUpdater) Status() string {
+	var parts []string
+	for _, u := range c.updaters {
+		parts = append(parts, u.Status())
+	}
+	return strings.Join(parts, "\n")
 }
 
 /*
