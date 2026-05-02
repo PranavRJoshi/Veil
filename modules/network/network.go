@@ -148,6 +148,7 @@ type NetworkModule struct {
 	Events         chan events.NetworkEvent
 	filter         FilterConfig
 	sink           output.EventSink
+	updater        *mapUpdaterState
 }
 
 /*
@@ -222,6 +223,11 @@ func (n *NetworkModule) Load() error {
 	if err := n.populateFilters(); err != nil {
 		return err
 	}
+
+	/*
+		Initialize MapUpdater for runtime filter control
+	*/
+	n.initMapUpdater()
 
 	var err error
 
@@ -314,13 +320,13 @@ func (n *NetworkModule) Close() error {
 func (n *NetworkModule) Run(done <-chan struct{}) {
 	for {
 		select {
-		case e, ok := <-n.Events:
-			if !ok {
+			case e, ok := <-n.Events:
+				if !ok {
+					return
+				}
+				n.sink.Emit("network", networkToFields(e))
+			case <-done:
 				return
-			}
-			n.sink.Emit("network", networkToFields(e))
-		case <-done:
-			return
 		}
 	}
 }
