@@ -13,7 +13,9 @@ import (
 	"sync"
 )
 
-// MapUpdater bridges control commands to BPF map operations.
+/*
+	MapUpdater bridges control commands to BPF map operations.
+*/
 type MapUpdater interface {
 	AddFilter(mapName string, key uint64) error
 	DelFilter(mapName string, key uint64) error
@@ -22,8 +24,10 @@ type MapUpdater interface {
 	Status() string
 }
 
-// Handler processes control commands against a MapUpdater.
-// It is shared by both the interactive prompt and the socket server.
+/*
+	Handler processes control commands against a MapUpdater.
+	It is shared by both the interactive prompt and the socket server.
+*/
 type Handler struct {
 	updater MapUpdater
 }
@@ -32,9 +36,17 @@ func NewHandler(updater MapUpdater) *Handler {
 	return &Handler{updater: updater}
 }
 
-// HandleCommand parses and executes a single command line, returning
-// the response string. Safe to call from any goroutine.
+/*
+	HandleCommand parses and executes a single command line, returning
+	the response string. Safe to call from any goroutine.
+
+	Map names can be plain ("pid") or module-qualified ("network.port"). Plain
+	names route through the MapUpdater's dispatch logic (e.g., compositeUpdater
+	routes by ownership). Module-qualified names are passed through as-is; the
+	MapUpdater implementation decides how to handle the prefix.
+*/
 func (h *Handler) HandleCommand(line string) string {
+
 	parts := strings.Fields(strings.TrimSpace(line))
 	if len(parts) == 0 {
 		return ""
@@ -46,25 +58,46 @@ func (h *Handler) HandleCommand(line string) string {
 		case "status":
 			return h.updater.Status()
 		case "add":
-			if len(parts) != 3 {
-				return "ERR usage: add <map> <key>"
+			if len(parts) == 3 {
+				return h.doAdd(parts[1], parts[2])
 			}
-			return h.doAdd(parts[1], parts[2])
+			if len(parts) == 4 {
+				/*
+					4-part form: add <module> <map> <keys>
+					Combine module and map into "module.map" so the
+					compositeUpdater can dispatch by module name.
+				*/
+				qualifiedMap := parts[1] + "." + parts[2]
+				return h.doAdd(qualifiedMap, parts[3])
+			}
+			return "ERR usage: add [<module>] <map> <key>"
 		case "del":
-			if len(parts) != 3 {
-				return "ERR usage: del <map> <key>"
+			if len(parts) == 3 {
+				return h.doDel(parts[1], parts[2])
 			}
-			return h.doDel(parts[1], parts[2])
+			if len(parts) == 4 {
+				qualifiedMap := parts[1] + "." + parts[2]
+				return h.doDel(qualifiedMap, parts[3])
+			}
+			return "ERR usage: del [<module>] <map> <key>"
 		case "list":
-			if len(parts) != 2 {
-				return "ERR usage: list <map>"
+			if len(parts) == 2 {
+				return h.doList(parts[1])
 			}
-			return h.doList(parts[1])
+			if len(parts) == 3 {
+				qualifiedMap := parts[1] + "." + parts[2]
+				return h.doList(qualifiedMap)
+			}
+			return "ERR usage: list [<module>] <map>"
 		case "clear":
-			if len(parts) != 2 {
-				return "ERR usage: clear <map>"
+			if len(parts) == 2 {
+				return h.doClear(parts[1])
 			}
-			return h.doClear(parts[1])
+			if len(parts) == 3 {
+				qualifiedMap := parts[1] + "." + parts[2]
+				return h.doClear(qualifiedMap)
+			}
+			return "ERR usage: clear [<module>] <map>"
 		case "resume", "quit", "exit":
 			/*
 				These are handled by the caller (interactive or main loop),
@@ -123,7 +156,9 @@ func (h *Handler) doClear(mapName string) string {
 
 // --- Interactive mode (stdin/stdout) ---
  
-// InteractiveResult indicates how the interactive session ended.
+/*
+	InteractiveResult indicates how the interactive session ended.
+*/
 type InteractiveResult int
  
 const (
@@ -131,9 +166,11 @@ const (
 	ResultQuit                            // user typed "quit"/"exit" or Ctrl+C/Ctrl+D
 )
  
-// Interactive runs a blocking command loop on the given reader/writer
-// (typically os.Stdin/os.Stderr). It returns when the user types
-// "resume", "quit", "exit", or the reader reaches EOF.
+/*
+	Interactive runs a blocking command loop on the given reader/writer
+	(typically os.Stdin/os.Stderr). It returns when the user types
+	"resume", "quit", "exit", or the reader reaches EOF.
+*/
 func Interactive(h *Handler, r io.Reader, w io.Writer) InteractiveResult {
 	fmt.Fprintln(w, "\nVeil interactive control (type 'help' for commands, 'resume' to continue tracing, 'quit' to exit)")
 	fmt.Fprint(w, "veil $ ")
@@ -168,7 +205,9 @@ func Interactive(h *Handler, r io.Reader, w io.Writer) InteractiveResult {
 
 // --- Unix socket server ---
 
-// Server listens on a Unix domain socket and processes filter commands.
+/*
+	Server listens on a Unix domain socket and processes filter commands.
+*/
 type Server struct {
 	handler *Handler
 	path    string
@@ -177,7 +216,9 @@ type Server struct {
 	wg      sync.WaitGroup
 }
 
-// NewServer creates a control server at the given socket path.
+/*
+	NewServer creates a control server at the given socket path.
+*/
 func NewServer(path string, handler *Handler) *Server {
 	return &Server{
 		handler: handler,
@@ -204,7 +245,9 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Stop shuts down the server and removes the socket file.
+/*
+	Stop shuts down the server and removes the socket file.
+*/
 func (s *Server) Stop() error {
 	close(s.done)
 	if s.ln != nil {
@@ -215,7 +258,9 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-// SocketPath returns the path to the Unix socket.
+/*
+	SocketPath returns the path to the Unix socket.
+*/
 func (s *Server) SocketPath() string {
 	return s.path
 }
@@ -263,15 +308,22 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 }
 
-const helpText = `Veil control socket commands:
-  add <map> <key>    Add a filter key (e.g. add pid 1234)
-  del <map> <key>    Remove a filter key
-  list <map>         List all keys in a filter map
-  clear <map>        Remove all keys from a filter map
-  status             Show active filters and module state
-  resume             Resume tracing (interactive mode only)
-  quit/exit          Stop Veil and exit
-  help               Show this help
+const helpText = `Veil control commands:
+  add <map> <key>             Add a filter key (e.g. add pid 1234)
+  add <module> <map> <key>    Add to a specific module
+  del <map> <key>             Remove a filter key
+  del <module> <map> <key>    Remove from a specific module
+  list <map>                  List all keys in a filter map
+  list <module> <map> <key>   List from a specific module
+  clear <map>                 Remove all keys from a filter map
+  clear <module> <map>        Clear a specific module's map
+  status                      Show active filters and module state
+  resume                      Resume tracing (interactive mode only)
+  quit/exit                   Stop Veil and exit
+  help                        Show this help
 
-Map names: pid, uid, port, syscall
-Keys: decimal integers`
+Module: syscall, files, network
+General Map Names: pid, uid
+Syscall Module Map Names: syscall
+Network Module Map Names: port
+Keys: decimal`
