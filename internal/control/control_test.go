@@ -168,7 +168,7 @@ func TestServer_Help(t *testing.T) {
 	defer srv.Stop()
 
 	resp := sendCommand(t, sock, "help")
-	if !strings.Contains(resp, "Veil control socket") {
+	if !strings.Contains(resp, "Veil control commands") {
 		t.Errorf("unexpected help response: %q", resp)
 	}
 }
@@ -536,7 +536,7 @@ func TestHandler_Status(t *testing.T) {
 func TestHandler_Help(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	resp := h.HandleCommand("help")
-	if !strings.Contains(resp, "Veil control socket commands") {
+	if !strings.Contains(resp, "Veil control commands") {
 		t.Errorf("help should contain header, got %q", resp)
 	}
 }
