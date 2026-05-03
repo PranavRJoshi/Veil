@@ -13,8 +13,11 @@ package files
 	Key types: pid=uint32, uid=uint32
 
 	Bitmask convention:
-	  bit 0 = pid_filter active
-	  bit 1 = uid_filter active
+		bit 0 = pid_filter active
+		bit 1 = uid_filter active
+		bit 2 = <unused>
+		bit 3 = pid_deny filter active
+		bit 4 = uid_deny filter active
 */
 
 import (
@@ -45,6 +48,14 @@ func (f *FilesModule) initMapUpdater() {
 			"uid": {
 				bpfMap: f.objs.UidFilter,
 				bit:    2,
+			},
+			"pid_deny": {
+				bpfMap: f.objs.PidDeny,
+				bit:    8,
+			},
+			"uid_deny": {
+				bpfMap: f.objs.UidDeny,
+				bit:    16,
 			},
 		},
 		cfgMap: f.objs.FilterCfg,
@@ -78,7 +89,13 @@ func (f *FilesModule) DelFilter(mapName string, key uint64) error {
 		return fmt.Errorf("files: unknown filter map %q (valid: pid, uid)", mapName)
 	}
 
+	/* Verify that the key exists before attempting deletion */
 	k := uint32(key)
+	var val uint8
+	if err := meta.bpfMap.Lookup(k, &val); err != nil {
+		return fmt.Errorf("files: key %d not found in %s filter", key, mapName)
+	}
+
 	if err := meta.bpfMap.Delete(k); err != nil {
 		return fmt.Errorf("files: del %s filter %d: %w", mapName, key, err)
 	}
@@ -90,6 +107,7 @@ func (f *FilesModule) DelFilter(mapName string, key uint64) error {
 	if empty {
 		return f.updater.clearBit(meta.bit)
 	}
+
 	return nil
 }
 
@@ -127,8 +145,11 @@ func (f *FilesModule) Status() string {
 
 	pids, _ := iterateMap32(f.updater.filters["pid"].bpfMap)
 	uids, _ := iterateMap32(f.updater.filters["uid"].bpfMap)
+	pidDeny, _ := iterateMap32(f.updater.filters["pid_deny"].bpfMap)
+	uidDeny, _ := iterateMap32(f.updater.filters["uid_deny"].bpfMap)
 
-	return fmt.Sprintf("files: loaded, filters: pid=%v, uid=%v", pids, uids)
+	return fmt.Sprintf("files: loaded, filters: pid=%v, uid=%v, pid_deny=%v, uid_deny=%v",
+	pids, uids, pidDeny, uidDeny)
 }
 
 // ---------------------------------------------------------------------------
@@ -137,19 +158,21 @@ func (f *FilesModule) Status() string {
 
 func (s *mapUpdaterState) setBit(bit uint32) error {
 	mask, _ := s.readCfg()
-	if mask&bit != 0 {
+	if mask & bit != 0 {
 		return nil
 	}
 	mask |= bit
+
 	return s.writeCfg(mask)
 }
 
 func (s *mapUpdaterState) clearBit(bit uint32) error {
 	mask, _ := s.readCfg()
-	if mask&bit == 0 {
+	if mask & bit == 0 {
 		return nil
 	}
 	mask &^= bit
+
 	return s.writeCfg(mask)
 }
 
@@ -159,11 +182,13 @@ func (s *mapUpdaterState) readCfg() (uint32, error) {
 	if err := s.cfgMap.Lookup(cfgKey, &mask); err != nil {
 		return 0, nil
 	}
+
 	return mask, nil
 }
 
 func (s *mapUpdaterState) writeCfg(mask uint32) error {
 	cfgKey := uint32(0)
+
 	return s.cfgMap.Update(cfgKey, mask, ebpf.UpdateAny)
 }
 
@@ -175,10 +200,12 @@ func iterateMap32(m *ebpf.Map) ([]uint64, error) {
 	var keys []uint64
 	var key uint32
 	var val uint8
+
 	iter := m.Iterate()
 	for iter.Next(&key, &val) {
 		keys = append(keys, uint64(key))
 	}
+
 	return keys, iter.Err()
 }
 
@@ -187,6 +214,7 @@ func isMapEmpty(m *ebpf.Map) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
 	return len(keys) == 0, nil
 }
 
@@ -201,5 +229,6 @@ func clearMap32(m *ebpf.Map) error {
 			return err
 		}
 	}
+
 	return nil
 }
