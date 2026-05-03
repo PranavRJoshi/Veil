@@ -49,6 +49,11 @@ Files module flags:
 
 Network module flags:
   --port <port>         Filter by port number (comma-separated)
+
+Negation filter examples:
+  --pid '!1234'         Exclude PID 1234
+  --pid '100,!200'      Allow only PID 100, but never 200
+  --syscall '!ioctl'    Exclude ioctl syscalls
 `
 	fmt.Fprint(os.Stderr, u)
 }
@@ -125,14 +130,32 @@ func Parse(args []string) (Config, error) {
 					return cfg, fmt.Errorf("%s requires a value", arg)
 				}
 				i++
-				cfg.ModuleFlags["pid"] = args[i]
+				/*
+					We pass a string that may be a comma separated numbers
+					which may optionally include the '!' character, indicating
+					exclusion (negation). This function returns two strings,
+					which are stored in allow and deny variables below.
+				*/
+				allow, deny := splitAllowDeny(args[i])
+				if allow != "" {
+					cfg.ModuleFlags["pid"] = allow
+				}
+				if deny != "" {
+					cfg.ModuleFlags["pid_deny"] = deny
+				}
 
 			case arg == "-u" || arg == "--uid":
 				if i+1 >= len(args) {
 					return cfg, fmt.Errorf("%s requires a value", arg)
 				}
 				i++
-				cfg.ModuleFlags["uid"] = args[i]
+				allow, deny := splitAllowDeny(args[i])
+				if allow != "" {
+					cfg.ModuleFlags["uid"] = allow
+				}
+				if deny != "" {
+					cfg.ModuleFlags["uid_deny"] = deny
+				}
 
 			case arg == "-n" || arg == "--name":
 				if i+1 >= len(args) {
@@ -147,7 +170,13 @@ func Parse(args []string) (Config, error) {
 					return cfg, fmt.Errorf("%s requires a value", arg)
 				}
 				i++
-				cfg.ModuleFlags["syscall"] = args[i]
+				allow, deny := splitAllowDeny(args[i])
+				if allow != "" {
+					cfg.ModuleFlags["syscall"] = allow
+				}
+				if deny != "" {
+					cfg.ModuleFlags["syscall_deny"] = deny
+				}
 
 		/* file module specific */
 			case arg == "--op":
@@ -170,7 +199,13 @@ func Parse(args []string) (Config, error) {
 					return cfg, fmt.Errorf("--port requires a value")
 				}
 				i++
-				cfg.ModuleFlags["port"] = args[i]
+				allow, deny := splitAllowDeny(args[i])
+				if allow != "" {
+					cfg.ModuleFlags["port"] = allow
+				}
+				if deny != "" {
+					cfg.ModuleFlags["port_deny"] = deny
+				}
 
 			case strings.HasPrefix(arg, "-"):
 				return cfg, fmt.Errorf("unknown flag: %s", arg)
@@ -190,7 +225,6 @@ func Parse(args []string) (Config, error) {
 	/*
 		Validate the module name against the registry.
 		Supports comma-separated lists for multi-module mode
-		(e.g., "syscall,network").
 	*/
 	for _, name := range strings.Split(cfg.Module, ",") {
 		name = strings.TrimSpace(name)
@@ -222,4 +256,48 @@ func PrintModules() {
 
 func Usage() {
 	usage()
+}
+
+/*
+	splitAllowDeny separates a comma-separated value string into allow and deny
+	components. Values prefixed with '!' are deny values.
+
+	NOTE: In interactive mode, shell programs interpret the '!' character as
+	"history expansion" character. The sequence of characters '!!' is used to
+	indicate execution of previous command. Likewise, the sequence of characters
+	'!:<n>', where '<n>' is a non-negative integer indicates '<n>'th argument
+	of previous command. To overcome this, when using the negation filter, the
+	user should explicitly wrap the argument in single quotes. For example,
+	instead of writing:
+
+			# ./bin/veil --module syscall --pid !100
+
+	one should write:
+
+			# ./bin/veil --module syscall --pid '!100'
+
+	such that it will be correctly interpreted.
+
+	The '!' is stripped from deny values in the returned string.
+*/
+func splitAllowDeny(raw string) (allow, deny string) {
+	var allows, denies []string
+
+	for _, s := range strings.Split(raw, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+
+		if strings.HasPrefix(s, "!") {
+			v := strings.TrimPrefix(s, "!")
+			if v != "" {
+				denies = append(denies, v)
+			}
+		} else {
+			allows = append(allows, s)
+		}
+	}
+
+	return strings.Join(allows, ","), strings.Join(denies, ",")
 }
