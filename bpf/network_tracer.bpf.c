@@ -193,7 +193,7 @@ struct net_event {
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 24);   /* 16 MB */
+    __uint(max_entries, 1 << 24);    /* 16 MB */
 } net_events SEC(".maps");
 
 /*
@@ -236,15 +236,22 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, 1024);
-    __type(key, __u16);         /* local port */
+    __type(key, __u16);        /* local port */
     __type(value, struct pid_info);
 } listen_pid SEC(".maps");
 
 /*
  * Filter maps, similar to one found in syscall and files.
- *   bit 0 = pid_filter active
- *   bit 1 = uid_filter active
- *   bit 2 = port_filter active
+ * Allow maps: event must be in the map to pass.
+ * Deny maps:  event must not be in the map to pass (deny takes precedence).
+ *
+ * Bitmask:
+ *   bit 0 = pid allow filter active
+ *   bit 1 = uid allow filter active
+ *   bit 2 = port allow filter active
+ *   bit 3 = pid deny filter active
+ *   bit 4 = uid deny filter active
+ *   bit 5 = port deny filter active
  */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -263,9 +270,33 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, 64);
-    __type(key, __u16);     /* port number */
+    __type(key, __u16);        /* port number */
     __type(value, __u8);
 } port_filter SEC(".maps");
+
+/*
+ * Deny filter maps
+ */
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 64);
+	__type(key, __u32);        /* PID to exclude */
+	__type(value, __u8);
+} pid_deny SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 64);
+	__type(key, __u32);        /* UID to exclude */
+	__type(value, __u8);
+} uid_deny SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 64);
+	__type(key, __u16);        /* port to exclude */
+	__type(value, __u8);
+} port_deny SEC(".maps");
 
 /* filter configuration array */
 struct {
@@ -278,6 +309,7 @@ struct {
 /*
  * check_pid_filter returns 1 if the event should be dropped (filtered out).
  * Returns 0 if the event passes all filters.
+ * As mentioned above, deny filter takes precedence.
  */
 static __always_inline int check_pid_filter(__u32 pid, __u32 uid)
 {
@@ -288,6 +320,18 @@ static __always_inline int check_pid_filter(__u32 pid, __u32 uid)
 
     __u32 mask = *cfg;
 
+	/*
+	 * Deny filters first
+	 */
+	if ((mask & 8) && bpf_map_lookup_elem(&pid_deny, &pid))
+		return 1;
+
+	if ((mask & 16) && bpf_map_lookup_elem(&uid_deny, &uid))
+		return 1;
+
+	/*
+	 * Now check in allow filters
+	 */
     if ((mask & 1) && !bpf_map_lookup_elem(&pid_filter, &pid))
         return 1;
 
@@ -306,6 +350,17 @@ static __always_inline int check_port_filter(__u16 sport, __u16 dport)
         return 0;
 
     __u32 mask = *cfg;
+
+	/*
+	 * Port deny filter: if either port is in deny list, drop
+	 */
+	if (mask & 32) {
+		if (bpf_map_lookup_elem(&port_deny, &sport))
+			return 1;
+		if (bpf_map_lookup_elem(&port_deny, &dport))
+			return 1;
+	}
+
 	/* port filter was not active */
     if (!(mask & 4))
         return 0;
