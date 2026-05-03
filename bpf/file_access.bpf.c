@@ -15,7 +15,7 @@ struct file_event {
     __u64 timestamp;
     __u8  comm[16];
     __u8  filename[MAX_FILENAME_LEN];
-    __u8  op;       // 0=open, 1=read, 2=write
+    __u8  op;                  /* 0=open, 1=read, 2=write */
 };
 
 #define OP_OPEN  0
@@ -29,8 +29,8 @@ struct {
 
 /*
  * Filter maps: same convention as syscall_tracer.bpf.c.
- * If a filter map is non-empty (indicated by filter_cfg bitmask),
- * only events whose key is present in the map are submitted.
+ * Allow maps:  events must be in the map to pass.
+ * Deny maps:   events must not be in the map to pass (deny takes precedence).
  */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -47,9 +47,29 @@ struct {
 } uid_filter SEC(".maps");
 
 /*
+ * Deny filter maps.
+ */
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 64);
+	__type(key, __u32);        /* PID to exclude */
+	__type(value, __u8);
+} pid_deny SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 64);
+	__type(key, __u32);        /* UID to exclude */
+	__type(value, __u8);
+} uid_deny SEC(".maps");
+
+/*
  * Filter configuration bitmask (single-element array map).
  *   bit 0 = pid_filter active
  *   bit 1 = uid_filter active
+ *   bit 2 = [unused]
+ *   bit 3 = pid deny filter active
+ *   bit 4 = uid deny filter active
  */
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -76,8 +96,22 @@ static __always_inline int fill_common(struct file_event *e, __u8 op)
     __u32 *cfg = bpf_map_lookup_elem(&filter_cfg, &cfg_key);
     if (cfg && *cfg) {
         __u32 mask = *cfg;
+
+		/*
+		 * Handle deny filters first.
+		 */
+		if ((mask & 8) && bpf_map_lookup_elem(&pid_deny, &pid))
+			return 1;
+
+		if ((mask & 16) && bpf_map_lookup_elem(&uid_deny, &uid))
+			return 1;
+
+		/*
+		 * Now work on allow filters
+		 */
         if ((mask & 1) && !bpf_map_lookup_elem(&pid_filter, &pid))
             return 1;
+
         if ((mask & 2) && !bpf_map_lookup_elem(&uid_filter, &uid))
             return 1;
     }
