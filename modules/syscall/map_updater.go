@@ -11,10 +11,10 @@ package syscall
 	a filter map if the corresponding bit is set. If the bit is set but the map
 	is empty, all events are dropped. Therefore:
 
-		- AddFilter: insert key into hash map, set the filter bit
-		- DelFilter: remove key from hash map; if the map is now empty, clear the bit
-		- ClearFilters: delete all keys && clear the corresponding cfg bit
-		- ListFilters: iterate the hash map
+		AddFilter: insert key into hash map, set the filter bit
+		DelFilter: remove key from hash map; if the map is now empty, clear the bit
+		ClearFilters: delete all keys && clear the corresponding cfg bit
+		ListFilters: iterate the hash map
 
 	Supported map names: 'pid', 'uid', and 'syscall'
 	Key types: pid=uint32, uid=uint32, syscall=uint64
@@ -23,6 +23,9 @@ package syscall
 		bit 0 - pid_filter active
 		bit 1 - uid_filter active
 		bit 2 - syscall_filter active
+		bit 3 - pid_deny filter active
+		bit 4 - uid_deny filter active
+		bit 5 - syscall_deny filter active
 */
 
 import (
@@ -77,6 +80,21 @@ func (t *TracerModule) initMapUpdater() {
 				bit:     4,
 				keySize: 8,
 			},
+			"pid_deny": {
+				bpfMap:  t.objs.PidDeny,
+				bit:     8,
+				keySize: 4,
+			},
+			"uid_deny": {
+				bpfMap:  t.objs.UidDeny,
+				bit:     16,
+				keySize: 4,
+			},
+			"syscall_deny": {
+				bpfMap:  t.objs.SyscallDeny,
+				bit:     32,
+				keySize: 8,
+			},
 		},
 		cfgMap: t.objs.FilterCfg,
 	}
@@ -116,6 +134,11 @@ func (t *TracerModule) DelFilter(mapName string, key uint64) error {
 	meta, ok := t.updater.filters[mapName]
 	if !ok {
 		return fmt.Errorf("syscall: unknown filter map %q (valid: pid, uid, syscall)", mapName)
+	}
+
+	/* Verify the key exists before attempting deletion */
+	if !lookupMapKey(meta.bpfMap, key, meta.keySize) {
+		return fmt.Errorf("syscall: key %d not found in %s filter", key, mapName)
 	}
 
 	if err := deleteMapKey(meta.bpfMap, key, meta.keySize); err != nil {
@@ -182,8 +205,12 @@ func (t *TracerModule) Status() string {
 	pids, _ := iterateMapKeys(t.updater.filters["pid"].bpfMap, 4)
 	uids, _ := iterateMapKeys(t.updater.filters["uid"].bpfMap, 4)
 	syscalls, _ := iterateMapKeys(t.updater.filters["syscall"].bpfMap, 8)
+	pidDeny, _ := iterateMapKeys(t.updater.filters["pid_deny"].bpfMap, 4)
+	uidDeny, _ := iterateMapKeys(t.updater.filters["uid_deny"].bpfMap, 4)
+	syscallDeny, _ := iterateMapKeys(t.updater.filters["syscall_deny"].bpfMap, 8)
 
-	return fmt.Sprintf("syscall: loaded, filters: pid=%v, uid=%v, syscall=%v", pids, uids, syscalls)
+	return fmt.Sprintf("syscall: loaded, filters: pid=%v, uid=%v, syscall=%v, pid_deny=%v, uid_deny=%v, syscall_deny=%v",
+	pids, uids, syscalls, pidDeny, uidDeny, syscallDeny)
 }
 
 // --------------------------------------------------------
@@ -274,6 +301,19 @@ func updateMapKey(m *ebpf.Map, key uint64, value uint8, keySize int) error {
 			return m.Update(key, value, ebpf.UpdateAny)
 		default:
 			return fmt.Errorf("unsupported key size: %d", keySize)
+	}
+}
+
+func lookupMapKey(m *ebpf.Map, key uint64, keySize int) bool {
+	var val uint8
+	switch keySize {
+	case 4:
+		k := uint32(key)
+		return m.Lookup(k, &val) == nil
+	case 8:
+		return m.Lookup(key, &val) == nil
+	default:
+		return false
 	}
 }
 
