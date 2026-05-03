@@ -51,11 +51,13 @@ func init() {
 	userspace filters (comm name, filename substring, operation type).
 */
 type FilterConfig struct {
-	PIDs		[]uint32  /* -p flag: filter by PID (kernel-side) */
-	UIDs		[]uint32  /* -u flag: filter by UID (kernel-side) */
-	CommName	string    /* -n flag: filter by process name (userspace) */
-	FileName	string    /* --file flag: filter by filename substring (userspace) */
-	Ops			[]string  /* --op flag: filter by operation type (selective kprobe attachment) */
+	PIDs         []uint32  /* -p flag: filter by PID (kernel-side) */
+	UIDs         []uint32  /* -u flag: filter by UID (kernel-side) */
+	CommName     string    /* -n flag: filter by process name (userspace) */
+	FileName     string    /* --file flag: filter by filename substring (userspace) */
+	Ops          []string  /* --op flag: filter by operation type (selective kprobe attachment) */
+	DenyPIDs     []uint32  /* --pid !<pid>: exclude PIDs */
+	DenyUIDs     []uint32  /* --uid !<uid>: exclude UIDs */
 }
 
 /*
@@ -84,6 +86,17 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 			cfg.PIDs = append(cfg.PIDs, uint32(v))
 		}
 	}
+
+	/* parse the filtered deny PIDs for this module, and must be comma-separated */
+	if raw, ok := flags["pid_deny"]; ok {
+		for _, s := range strings.Split(raw, ",") {
+			v, err := strconv.ParseUint(strings.TrimSpace(s), 10, 32)
+			if err != nil {
+				return cfg, fmt.Errorf("invalid deny PID %q: %w", s, err)
+			}
+			cfg.DenyPIDs = append(cfg.DenyPIDs, uint32(v))
+		}
+	}
  
 	/* parse the filtered UIDs for this module, and must be comma-separated */
 	if raw, ok := flags["uid"]; ok {
@@ -93,6 +106,17 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 				return cfg, fmt.Errorf("invalid UID %q: %w", s, err)
 			}
 			cfg.UIDs = append(cfg.UIDs, uint32(v))
+		}
+	}
+
+	/* parse the filtered deny UIDs for this module, and must be comma-separated */
+	if raw, ok := flags["uid_deny"]; ok {
+		for _, s := range strings.Split(raw, ",") {
+			v, err := strconv.ParseUint(strings.TrimSpace(s), 10, 32)
+			if err != nil {
+				return cfg, fmt.Errorf("invalid deny UID %q: %w", s, err)
+			}
+			cfg.DenyUIDs = append(cfg.DenyUIDs, uint32(v))
 		}
 	}
  
@@ -144,15 +168,15 @@ func (cfg *FilterConfig) wantOp(op string) bool {
 */
 type FilesModule struct {
 	*loader.BaseProgram
-	objs		FileAccessObjects
-	kprobeOpen	link.Link
-	kprobeRead	link.Link
-	kprobeWrite	link.Link
-	reader		*ringbuf.Reader
-	Events		chan events.FileEvent
-	filter      FilterConfig
-	sink		output.EventSink
-	updater     *mapUpdaterState
+	objs         FileAccessObjects
+	kprobeOpen   link.Link
+	kprobeRead   link.Link
+	kprobeWrite  link.Link
+	reader       *ringbuf.Reader
+	Events       chan events.FileEvent
+	filter       FilterConfig
+	sink         output.EventSink
+	updater      *mapUpdaterState
 }
 
 /*
@@ -160,9 +184,9 @@ type FilesModule struct {
 */
 func New(filter FilterConfig, sink output.EventSink) *FilesModule {
 	return &FilesModule{
-		BaseProgram:	loader.NewBaseProgram("file_access"),
-		Events:			make(chan events.FileEvent, 256),
-		filter:			filter,
+		BaseProgram:    loader.NewBaseProgram("file_access"),
+		Events:         make(chan events.FileEvent, 256),
+		filter:         filter,
 		sink:           sink,
 	}
 }
@@ -171,8 +195,11 @@ func New(filter FilterConfig, sink output.EventSink) *FilesModule {
 	populateFilters writes the filter values into the BPF maps after
 	the objects have been loaded. Same bitmask convention as the
 	syscall module:
-	  bit 0 = pid_filter active
-	  bit 1 = uid_filter active
+		bit 0 = pid_filter active
+		bit 1 = uid_filter active
+		bit 2 = <unused>
+		bit 3 = pid_deny filter active
+		bit 4 = uid_deny filter active
 */
 func (f *FilesModule) populateFilters() error {
 	var mask uint32
@@ -197,6 +224,27 @@ func (f *FilesModule) populateFilters() error {
 		for _, uid := range f.filter.UIDs {
 			if err := f.objs.UidFilter.Update(uid, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("files: set uid filter %d: %w", uid, err)
+			}
+		}
+	}
+
+	/*
+		Populate deny PID and UID filter maps
+	*/
+	if len(f.filter.DenyPIDs) > 0 {
+		mask |= 8
+		for _, pid := range f.filter.DenyPIDs {
+			if err := f.objs.PidDeny.Update(pid, enable, ebpf.UpdateAny); err != nil {
+				return fmt.Errorf("files: set pid deny filter %d: %w", pid, err)
+			}
+		}
+	}
+
+	if len(f.filter.DenyUIDs) > 0 {
+		mask |= 16
+		for _, uid := range f.filter.DenyUIDs {
+			if err := f.objs.UidDeny.Update(uid, enable, ebpf.UpdateAny); err != nil {
+				return fmt.Errorf("files: set uid deny filter %d: %w", uid, err)
 			}
 		}
 	}
@@ -393,4 +441,3 @@ func (f *FilesModule) matchesFilter(e events.FileEvent) bool {
 
 	return true
 }
-
