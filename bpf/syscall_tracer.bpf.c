@@ -56,10 +56,16 @@ struct {
  *   - key   = the value to match (e.g. a PID)
  *   - value = __u8 (unused, just a placeholder; presence of key = match)
  *
+ * Allow maps: event must be in the map to pass
+ * Deny maps: event must not be in the map to pass (deny takes precedence)
+ *
  * The config map holds a bitmask indicating which filters are active.
  * Bit 0: PID filter active
  * Bit 1: UID filter active
  * Bit 2: syscall number filter active
+ * Bit 3: PID deny filter active
+ * Bit 4: UID deny filter active
+ * Bit 5: syscall number deny filter active
  */
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -83,11 +89,38 @@ struct {
 } syscall_filter SEC(".maps");
 
 /*
+ * Negation filters. Deny filter maps.
+ */
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 64);
+	__type(key, __u32);        /* PID to exclude */
+	__type(value, __u8);
+} pid_deny SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 64);
+	__type(key, __u32);        /* UID to exclude */
+	__type(value, __u8);
+} uid_deny SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 512);
+	__type(key, __u64);        /* syscall number to exclude */
+	__type(value, __u8);
+} syscall_deny SEC(".maps");
+
+/*
  * A single-element array map holding the filter bitmask.
  * Index 0 stores a __u32 bitmask:
  *   bit 0 = pid_filter active
  *   bit 1 = uid_filter active
  *   bit 2 = syscall_filter active
+ *   bit 3 = pid deny filter active
+ *   bit 4 = uid deny filter active
+ *   bit 5 = syscall deny filter active
  *
  * If the bitmask is 0, no filtering is performed (all events pass).
  */
@@ -163,7 +196,30 @@ int trace_syscall_enter(struct trace_event_raw_sys_enter *ctx)
     __u32 *cfg = bpf_map_lookup_elem(&filter_cfg, &cfg_key);
     if (cfg && *cfg) {
         __u32 mask = *cfg;
- 
+
+		/*
+		 * Check deny filters first. As mentioned above, deny filter takes
+		 * precedence. So for instance, if the user added a specific pid/uid/
+		 * syscall in the deny list and the same value in the "allow" list,
+		 * it would be denied.
+		 */
+
+		/* Bit 3: PID deny filter */
+		if ((mask & 8) && bpf_map_lookup_elem(&pid_deny, &pid))
+			return 0;
+
+		/* Bit 4: UID deny filter */
+		if ((mask & 16) && bpf_map_lookup_elem(&uid_deny, &uid))
+			return 0;
+
+		/* Bit 5: Syscall deny filter */
+		if ((mask & 32) && bpf_map_lookup_elem(&syscall_deny, &nr))
+			return 0;
+
+		/*
+		 * Now check for the "allow" list.
+		 */
+
         /* Bit 0: PID filter */
         if ((mask & 1) && !bpf_map_lookup_elem(&pid_filter, &pid))
             return 0;
