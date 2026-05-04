@@ -5,17 +5,26 @@ package network
 	NOTE: Refer to modules/syscall/map_updater.go for additional
 	information since the implementations are mostly identical.
 
-	Wraps PidFilter, UidFilter, and PortFilter BPF maps with live
-	update, delete, list, and clear operations. Manages the filter_cfg
-	bitmask to ensure consistency.
+	Wraps PidFilter, UidFilter, PortFilter, PidDeny, UidDeny, and PortDeny
+	BPF maps with live update, delete, list, and clear operations. Manages the
+	filter_cfg bitmask to ensure consistency.
 
-	Supported map names: "pid", "uid", "port"
+	Supported map names:
+		1. pid
+		2. uid
+		3. port
+		4. pid_deny
+		5. uid_deny
+		6. port_deny
 	Key types: pid=uint32, uid=uint32, port=uint16
 
 	Bitmask convention:
-	  bit 0 = pid_filter active
-	  bit 1 = uid_filter active
-	  bit 2 = port_filter active
+		bit 0 = pid_filter active
+		bit 1 = uid_filter active
+		bit 2 = port_filter active
+		bit 3 = pid_deny filter active
+		bit 4 = uid_deny filter active
+		bit 5 = port_deny filter active
 */
 
 import (
@@ -55,6 +64,21 @@ func (n *NetworkModule) initMapUpdater() {
 				bit:     4,
 				keySize: 2,
 			},
+			"pid_deny": {
+				bpfMap:  n.objs.PidDeny,
+				bit:     8,
+				keySize: 4,
+			},
+			"uid_deny": {
+				bpfMap:  n.objs.UidDeny,
+				bit:     16,
+				keySize: 4,
+			},
+			"port_deny": {
+				bpfMap:  n.objs.PortDeny,
+				bit:     32,
+				keySize: 2,
+			},
 		},
 		cfgMap: n.objs.FilterCfg,
 	}
@@ -86,6 +110,11 @@ func (n *NetworkModule) DelFilter(mapName string, key uint64) error {
 		return fmt.Errorf("network: unknown filter map %q (valid: pid, uid, port)", mapName)
 	}
 
+	/* Verify the key exists before attempting deletion */
+	if !lookupKey(meta.bpfMap, key, meta.keySize) {
+		return fmt.Errorf("network: key %d not found in %s filter", key, mapName)
+	}
+
 	if err := deleteKey(meta.bpfMap, key, meta.keySize); err != nil {
 		return fmt.Errorf("network: del %s filter %d: %w", mapName, key, err)
 	}
@@ -97,6 +126,7 @@ func (n *NetworkModule) DelFilter(mapName string, key uint64) error {
 	if empty {
 		return n.updater.clearBit(meta.bit)
 	}
+
 	return nil
 }
 
@@ -135,9 +165,12 @@ func (n *NetworkModule) Status() string {
 	pids, _ := iterateKeys(n.updater.filters["pid"].bpfMap, 4)
 	uids, _ := iterateKeys(n.updater.filters["uid"].bpfMap, 4)
 	ports, _ := iterateKeys(n.updater.filters["port"].bpfMap, 2)
+	pidDeny, _ := iterateKeys(n.updater.filters["pid_deny"].bpfMap, 4)
+	uidDeny, _ := iterateKeys(n.updater.filters["uid_deny"].bpfMap, 4)
+	portDeny, _ := iterateKeys(n.updater.filters["port_deny"].bpfMap, 2)
 
-	return fmt.Sprintf("network: loaded, filters: pid=%v, uid=%v, port=%v",
-		pids, uids, ports)
+	return fmt.Sprintf("network: loaded, filters: pid=%v, uid=%v, port=%v, pid_deny=%v, uid_deny=%v, port_deny=%v",
+		pids, uids, ports, pidDeny, uidDeny, portDeny)
 }
 
 // ---------------------------------------------------------------------------
@@ -146,19 +179,21 @@ func (n *NetworkModule) Status() string {
 
 func (s *mapUpdaterState) setBit(bit uint32) error {
 	mask, _ := s.readCfg()
-	if mask&bit != 0 {
+	if mask & bit != 0 {
 		return nil
 	}
 	mask |= bit
+
 	return s.writeCfg(mask)
 }
 
 func (s *mapUpdaterState) clearBit(bit uint32) error {
 	mask, _ := s.readCfg()
-	if mask&bit == 0 {
+	if mask & bit == 0 {
 		return nil
 	}
 	mask &^= bit
+
 	return s.writeCfg(mask)
 }
 
@@ -168,11 +203,13 @@ func (s *mapUpdaterState) readCfg() (uint32, error) {
 	if err := s.cfgMap.Lookup(cfgKey, &mask); err != nil {
 		return 0, nil
 	}
+
 	return mask, nil
 }
 
 func (s *mapUpdaterState) writeCfg(mask uint32) error {
 	cfgKey := uint32(0)
+
 	return s.cfgMap.Update(cfgKey, mask, ebpf.UpdateAny)
 }
 
@@ -195,6 +232,20 @@ func updateKey(m *ebpf.Map, key uint64, value uint8, keySize int) error {
 	}
 }
 
+func lookupKey(m *ebpf.Map, key uint64, keySize int) bool {
+	var val uint8
+	switch keySize {
+	case 2:
+		k := uint16(key)
+		return m.Lookup(k, &val) == nil
+	case 4:
+		k := uint32(key)
+		return m.Lookup(k, &val) == nil
+	default:
+		return false
+	}
+}
+
 func deleteKey(m *ebpf.Map, key uint64, keySize int) error {
 	switch keySize {
 	case 2:
@@ -211,6 +262,7 @@ func deleteKey(m *ebpf.Map, key uint64, keySize int) error {
 func iterateKeys(m *ebpf.Map, keySize int) ([]uint64, error) {
 	var keys []uint64
 	var val uint8
+
 	switch keySize {
 	case 2:
 		var key uint16
@@ -236,6 +288,7 @@ func isMapEmpty(m *ebpf.Map, keySize int) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
 	return len(keys) == 0, nil
 }
 
@@ -249,5 +302,6 @@ func clearAll(m *ebpf.Map, keySize int) error {
 			return err
 		}
 	}
+
 	return nil
 }
