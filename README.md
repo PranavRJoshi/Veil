@@ -43,33 +43,54 @@ NOTE: Veil requires root privileges (or `CAP_BPF` + `CAP_PERFMON`) to load eBPF 
  
 Planned: `scheduler` (CPU run queue latency), `memory` (OOM, page faults).
 
-## Usage
+## Features
  
-### Selecting a Module
+### Multi-Module Tracing
+
+Run multiple modules concurrently with interleaved output:
  
 ```bash
-sudo ./bin/veil --module <n> [flags...]
-sudo ./bin/veil --list-modules          # show available modules
+sudo ./bin/veil --module syscall,network --pid 1234
+sudo ./bin/veil --module syscall,files,network --enrich all --output json
 ```
+
+### Kernel-Side Filtering
  
-### Filtering
- 
-Filters reduce event volume at the source. PID, UID, and port filters operate in the kernel via BPF maps; filtered events never reach userspace.
+PID, UID, port, and syscall filters operate in BPF; filtered events never reach userspace. Supports both allow and deny (negation) filters:
  
 ```bash
-# By PID (comma-separated for multiple)
+# Allow filters
 sudo ./bin/veil --module syscall -p 1234,5678
- 
-# By UID
-sudo ./bin/veil --module files -u 1000
- 
-# By process name (substring match, applied in userspace)
-sudo ./bin/veil --module network -n curl
- 
-# Module-specific filters
-sudo ./bin/veil --module syscall -s openat,read,write
-sudo ./bin/veil --module files --op read --file passwd
 sudo ./bin/veil --module network --port 80,443
+ 
+# Deny (negation) filters — prefix with !
+sudo ./bin/veil --module syscall --pid '!1'          # exclude PID 1
+sudo ./bin/veil --module network --port '!22'        # exclude SSH
+sudo ./bin/veil --module syscall --syscall '!ioctl'  # exclude ioctl
+ 
+# Combined: allow root only, but exclude PID 100
+sudo ./bin/veil --module syscall --uid 0 --pid '!100'
+```
+
+> [!NOTE]
+> During interactive mode, handle the use of `!` character with care as it is interpreted by bash as [_History Expansion_](https://www.gnu.org/software/bash/manual/html_node/History-Interaction.html). As shown in example, wrap the argument inside single quotes.
+
+Deny filters are checked before allow; if an event matches a deny entry, it is dropped regardless of allow filters.
+
+### Event Enrichment
+
+Add derived fields to events with `--enrich`:
+
+```bash
+sudo ./bin/veil --module syscall --enrich time           # timestamps
+sudo ./bin/veil --module syscall --enrich time,user      # timestamps + usernames
+sudo ./bin/veil --module network --enrich all            # everything
+```
+
+Output with `--enrich all`:
+
+```
+[14:32:05.123] bash             PID=1234   TID=1234   UID=0     GID=0     syscall=openat(257) user=root proc=bash
 ```
 
 ### Output Formats
@@ -104,7 +125,7 @@ sudo ./bin/veil --module syscall --output json | jq '.syscall'
 sudo ./bin/veil --module network --output json >> /var/log/veil-network.jsonl
 ```
 
-### Interactive Control
+### Runtime Filter Control
  
 Press **CTRL-C** during tracing to pause output and enter a control
 prompt where you can modify filters at runtime:
