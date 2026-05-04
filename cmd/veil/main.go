@@ -92,7 +92,6 @@ func main() {
 					fmt.Fprintf(os.Stderr,
 					"warning: unknown enricher %q (valid: time, proc, user, all)\n",
 					name)
-					
 			}
 		}
 		if len(opts) > 0 {
@@ -110,7 +109,7 @@ func main() {
 	var modules []runner.Module
 
 	for _, name := range moduleNames {
-		info, _ := registry.Get(name)	/* already validated by CLI */
+		info, _ := registry.Get(name)    /* already validated by CLI */
 
 		modIface, err := info.Factory(cfg.ModuleFlags, sink)
 		if err != nil {
@@ -185,12 +184,12 @@ func main() {
 		"quit"/exit   - shut down
 		Second CTRL-C - shut down (while in interactive mode)
 	*/
-	sigCh := make(chan os.Signal, 1)	/* buffered channel */
+	sigCh := make(chan os.Signal, 1)     /* buffered channel */
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	for {
 		sig := <- sigCh
-		
+
 		/* SIGTERM always means immeditate shutdown */
 		if sig == syscall.SIGTERM {
 			break
@@ -263,7 +262,7 @@ func main() {
 		} else {
 			fmt.Fprintf(os.Stderr, "---  resumed  ---\n")
 		}
-		
+
 		/*
 			Reset the signal listener for the next CTRL-C cycle. Drain any
 			pending signals.
@@ -347,10 +346,14 @@ type compositeUpdater struct {
 	"syscall" is syscall-only, "port" is network-only.
 */
 var mapOwnership = map[string][]string{
-	"pid":     {"syscall", "files", "network"},
-	"uid":     {"syscall", "files", "network"},
-	"syscall": {"syscall"},
-	"port":    {"network"},
+	"pid":           {"syscall", "files", "network"},
+	"uid":           {"syscall", "files", "network"},
+	"syscall":       {"syscall"},
+	"port":          {"network"},
+	"pid_deny":      {"syscall", "files", "network"},
+	"uid_deny":      {"syscall", "files", "network"},
+	"syscall_deny":  {"syscall"},
+	"port_deny":     {"network"},
 }
 
 /*
@@ -419,6 +422,21 @@ func (c *compositeUpdater) DelFilter(mapName string, key uint64) error {
 		return err
 	}
 
+	/*
+		For shared maps, the key may exist in some modules but not others.
+		A delete is successful if at least one module had the key. We can
+		either:
+
+			1. Assume that upon one successful deletion, simply return OK
+			   and user check for themselves the map.
+			2. Report the successful deletion as well as return failure
+			   when other module's fails.
+
+		The second option is chosen for now. For the first option, we need
+		to make a variable to track the number of successful deletion
+		and if its greater than one, simply return OK, else return an
+		error.
+	*/
 	var delErr error
 	for _, name := range targets {
 		if u, exists := c.updaters[name]; exists {
@@ -457,15 +475,16 @@ func (c *compositeUpdater) ClearFilters(mapName string) error {
 	if err != nil {
 		return err
 	}
+
 	var firstErr error
 	for _, name := range targets {
 		if u, exists := c.updaters[name]; exists {
-			/* TODO: Check if we really need to check firstErr being nil */
-			if err := u.ClearFilters(realMap); err != nil && firstErr == nil {
+			if err := u.ClearFilters(realMap); err != nil {
 				firstErr = err
 			}
 		}
 	}
+
 	return firstErr
 }
  
@@ -474,6 +493,7 @@ func (c *compositeUpdater) Status() string {
 	for _, u := range c.updaters {
 		parts = append(parts, u.Status())
 	}
+
 	return strings.Join(parts, "\n")
 }
 
