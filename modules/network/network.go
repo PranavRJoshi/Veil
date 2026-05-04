@@ -8,29 +8,29 @@ package network
 	The network module traces TCP connection lifecycle events using four
 	BPF hooks:
 
-	  1. tracepoint/sock/inet_sock_set_state - fires on every TCP state
-	     transition. This is the main event source. Available since kernel
-	     4.16 and part of the stable kernel ABI.
+		1. tracepoint/sock/inet_sock_set_state - fires on every TCP state
+		   transition. This is the main event source. Available since kernel
+		   4.16 and part of the stable kernel ABI.
 
-	  2. kprobe/tcp_v4_connect - fires in process context when connect()
-	     is called. Used solely to stash the PID and comm into a BPF hash
-	     map keyed by socket pointer, because the tracepoint fires in
-	     interrupt context where bpf_get_current_pid_tgid() returns the
-	     wrong PID.
+		2. kprobe/tcp_v4_connect - fires in process context when connect()
+		   is called. Used solely to stash the PID and comm into a BPF hash
+		   map keyed by socket pointer, because the tracepoint fires in
+		   interrupt context where bpf_get_current_pid_tgid() returns the
+		   wrong PID.
 
-	  3. kretprobe/inet_csk_accept - fires when accept() returns. Same
-	     purpose as above but for inbound connections.
+		3. kretprobe/inet_csk_accept - fires when accept() returns. Same
+		   purpose as above but for inbound connections.
 
-	  4. krpobe/inet_listen - fires when listen() is called. Like connect,
-	     it is used for stashing PID, comm, and UID. Useful for tracing
-	     server programs.
+		4. krpobe/inet_listen - fires when listen() is called. Like connect,
+		   it is used for stashing PID, comm, and UID. Useful for tracing
+		   server programs.
 
 	State transitions are classified into meaningful event types:
-	  CONNECT     - outbound connection initiated
-	  ESTABLISHED - connection established (inbound or outbound)
-	  CLOSE       - connection closing
-	  FAILED      - connection attempt failed
-	  LISTEN      - server started listening
+		CONNECT     - outbound connection initiated
+		ESTABLISHED - connection established (inbound or outbound)
+		CLOSE       - connection closing
+		FAILED      - connection attempt failed
+		LISTEN      - server started listening
 
 	********************************** NOTE **********************************
 */
@@ -82,10 +82,13 @@ func init() {
 	FilterConfig holds the parsed filter values from CLI flags.
 */
 type FilterConfig struct {
-	PIDs     []uint32    /* -p flag: filter by PID */
-	UIDs     []uint32    /* -u flag: filter by UID */
-	Ports    []uint16    /* --port flag: filter by port number */
-	CommName string      /* -n flag: filter by process name (userspace) */
+	PIDs      []uint32   /* -p flag: filter by PID */
+	UIDs      []uint32   /* -u flag: filter by UID */
+	Ports     []uint16   /* --port flag: filter by port number */
+	CommName  string     /* -n flag: filter by process name (userspace) */
+	DenyPIDs  []uint32   /* --pid !<pid>: exclude PIDs */
+	DenyUIDs  []uint32   /* --uid !<uid>: exclude UIDs */
+	DenyPorts []uint16   /* --port !<port>: exclude ports */
 }
 
 /*
@@ -105,6 +108,16 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 		}
 	}
 
+	if raw, ok := flags["pid_deny"]; ok {
+		for _, s := range strings.Split(raw, ",") {
+			v, err := strconv.ParseUint(strings.TrimSpace(s), 10, 32)
+			if err != nil {
+				return cfg, fmt.Errorf("invalid deny PID %q: %w", s, err)
+			}
+			cfg.DenyPIDs = append(cfg.DenyPIDs, uint32(v))
+		}
+	}
+
 	if raw, ok := flags["uid"]; ok {
 		for _, s := range strings.Split(raw, ",") {
 			v, err := strconv.ParseUint(strings.TrimSpace(s), 10, 32)
@@ -115,6 +128,16 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 		}
 	}
 
+	if raw, ok := flags["uid_deny"]; ok {
+		for _, s := range strings.Split(raw, ",") {
+			v, err := strconv.ParseUint(strings.TrimSpace(s), 10, 32)
+			if err != nil {
+				return cfg, fmt.Errorf("invalid deny UID %q: %w", s, err)
+			}
+			cfg.DenyUIDs = append(cfg.DenyUIDs, uint32(v))
+		}
+	}
+
 	if raw, ok := flags["port"]; ok {
 		for _, s := range strings.Split(raw, ",") {
 			v, err := strconv.ParseUint(strings.TrimSpace(s), 10, 16)
@@ -122,6 +145,16 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 				return cfg, fmt.Errorf("invalid port %q: %w", s, err)
 			}
 			cfg.Ports = append(cfg.Ports, uint16(v))
+		}
+	}
+
+	if raw, ok := flags["port_deny"]; ok {
+		for _, s := range strings.Split(raw, ",") {
+			v, err := strconv.ParseUint(strings.TrimSpace(s), 10, 16)
+			if err != nil {
+				return cfg, fmt.Errorf("invalid deny port %q: %w", s, err)
+			}
+			cfg.DenyPorts = append(cfg.DenyPorts, uint16(v))
 		}
 	}
 
@@ -166,9 +199,12 @@ func New(filter FilterConfig, sink output.EventSink) *NetworkModule {
 /*
 	populateFilters writes PID, UID, and port filter values into BPF maps.
 	Bitmask convention:
-	  bit 0 = pid_filter active
-	  bit 1 = uid_filter active
-	  bit 2 = port_filter active
+		bit 0 = pid_filter active
+		bit 1 = uid_filter active
+		bit 2 = port_filter active
+		bit 3 = pid_deny filter active
+		bit 4 = uid_deny filter active
+		bit 5 = port_deny filter active
 */
 func (n *NetworkModule) populateFilters() error {
 	var mask uint32
@@ -197,6 +233,36 @@ func (n *NetworkModule) populateFilters() error {
 		for _, port := range n.filter.Ports {
 			if err := n.objs.PortFilter.Update(port, enable, ebpf.UpdateAny); err != nil {
 				return fmt.Errorf("network: set port filter %d: %w", port, err)
+			}
+		}
+	}
+
+	/* Populate deny PID filter map */
+	if len(n.filter.DenyPIDs) > 0 {
+		mask |= 8
+		for _, pid := range n.filter.DenyPIDs {
+			if err := n.objs.PidDeny.Update(pid, enable, ebpf.UpdateAny); err != nil {
+				return fmt.Errorf("network: set pid deny filter %d: %w", pid, err)
+			}
+		}
+	}
+
+	/* Populate deny UID filter map */
+	if len(n.filter.DenyUIDs) > 0 {
+		mask |= 16
+		for _, uid := range n.filter.DenyUIDs {
+			if err := n.objs.UidDeny.Update(uid, enable, ebpf.UpdateAny); err != nil {
+				return fmt.Errorf("network: set uid deny filter %d: %w", uid, err)
+			}
+		}
+	}
+ 
+	/* Populate deny port filter map */
+	if len(n.filter.DenyPorts) > 0 {
+		mask |= 32
+		for _, port := range n.filter.DenyPorts {
+			if err := n.objs.PortDeny.Update(port, enable, ebpf.UpdateAny); err != nil {
+				return fmt.Errorf("network: set port deny filter %d: %w", port, err)
 			}
 		}
 	}
