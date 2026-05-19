@@ -11,6 +11,32 @@ import (
 )
 
 /*
+	TODO: The following system calls have unusal format compared to the
+	parsing test that is done below. Instead of '__NR_' prefix, syscall
+	number 222 and 223, which are mmap2 and fadvise64_64 respectively
+	use the format: '__NR3264_mmap' and '__NR3264_fadvise64'.
+
+	Before making modification to the code, it's better to first check
+	if this is used for all architectures or only the arm one, which I'm
+	using.
+
+	Also found some other variants with similar issues:
+
+		__NR3264_fcntl        - 25
+		__NR3264_statfs       - 43
+		__NR3264_fstatfs      - 44
+		__NR3264_truncate     - 45
+		__NR3264_ftruncate    - 46
+		__NR3264_lseek        - 62
+		__NR3264_sendfile     - 71
+		__NR3264_fstatat      - 79
+		__NR3264_fstat        - 80
+
+	It seems to me that we can check whether the prefix begins with '__NR_'
+	or '__NR3264_' and then strip out the prefix appropriately.
+*/
+
+/*
 	entry structure holds the system call number and the corresponding name.
 */
 type entry struct {
