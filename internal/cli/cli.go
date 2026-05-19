@@ -17,6 +17,8 @@ type Config struct {
 	ModuleFlags  map[string]string /* shared module key=value flags */
 	ControlPath  string            /* --control <path>: Unix socket */
 	EnrichFlags  string            /* --enrich <opts>: time,proc,user,all */
+	CountMode    bool              /* --count: enable count/summary mode */
+	CountKey     string            /* --count-by <field>: override aggregation key */
 	ListModules  bool              /* --list-modules */
 	ShowHelp     bool              /* --help or -h */
 }
@@ -32,6 +34,8 @@ Global flags:
   --list-modules     List available modules and exit
   --output <format>  Output format: text (default), json
   --enrich <opts>    Enable enrichment: time, proc, user, all (comma-separated)
+  --count            Enable count/summary mode: suppress live output, show top-N on exit
+  --count-by <field> Override aggregation key (default: per-module, e.g., syscall, file, dport)
   --control <path>   Start a Unix socket control server at <path>
   -h, --help         Show this help message
 
@@ -117,6 +121,17 @@ func Parse(args []string) (Config, error) {
 				}
 				i++
 				cfg.EnrichFlags = args[i]
+
+			case arg == "--count":
+				cfg.CountMode = true
+
+			case arg == "--count-by":
+				if i+1 >= len(args) {
+					return cfg, fmt.Errorf("--count-by requires a field name")
+				}
+				i++
+				cfg.CountKey = args[i]
+				cfg.CountMode = true     /* --count-by implies --count */
 
 			/*
 				Short-form: -p, -n, -s all take a value argument.

@@ -9,6 +9,7 @@ import (
 
 	"github.com/PranavRJoshi/Veil/internal/cli"
 	"github.com/PranavRJoshi/Veil/internal/control"
+	"github.com/PranavRJoshi/Veil/internal/count"
 	"github.com/PranavRJoshi/Veil/internal/enrich"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
@@ -52,11 +53,21 @@ func main() {
 					|
 					+-> wrapped by EnrichSink (optional)
 							|
-							+-> passed to module factories as their output target
+							+-> wrapped by CountSink (optional)
+									|
+									+-> passed to module factories as their output target
 
-		The enrichment layer sits between the pausable sink and the modules.
-		When paused, events are dropped at the PausableSink level, before
-		enrichment runs, thus avoiding unnecessary /proc reads during pause.
+		The optional Sink wrappers EnrichSink and CountSink are only in use
+		if the user passed appropriate flags in command-line arguments; --enrich
+		and --count[-by] respectively.
+
+		Regarding enrichment layer, when paused, events are dropped at the PausableSink
+		level, before enrichment runs, thus avoiding unnecessary /proc reads during
+		pause.
+
+		For CountSink, if the EventSink is wrapped by CountSink, the live reporting
+		is supprssed in favor of overall summary at the termination of program. Once
+		Close() of CountSink method is called, the report is shown to the user.
 	*/
 	var baseSink output.EventSink
 	switch cfg.ModuleFlags["output"] {
@@ -97,6 +108,34 @@ func main() {
 		if len(opts) > 0 {
 			sink = enrich.Chain(pausable, opts...)
 		}
+	}
+
+	/*
+		Count/summary mode: when --count or --count-by is specified, replace the
+		normal output sink with a CountSink that aggregates events and prints a
+		top-N summary. In this mode, live events are **not** streamed to standard
+		output stream--only the summary is shown (on standard error stream).
+
+		Enrichment (--enrich) has no effect in count mode since the summary ouput
+		does not include the enriched fields. Warn the user if both are
+		specified.
+	*/
+	var countSink *count.CountSink
+	if cfg.CountMode {
+		if cfg.CountKey != "" {
+			if err := count.ValidateKeyField(cfg.CountKey); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		if cfg.EnrichFlags != "" {
+			fmt.Fprintln(os.Stderr, "warning: --enrich has no observable effect in conjunction with --count")
+		}
+		countSink = count.NewCountSink(os.Stderr, 10)
+		if cfg.CountKey != "" {
+			countSink.WithKeyField(cfg.CountKey)
+		}
+		sink = countSink
 	}
 
 	/*
@@ -172,9 +211,15 @@ func main() {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr,
-	"Veil [%s] running, press CTRL-C to pause and modify filters\n",
-	cfg.Module)
+	if cfg.CountMode {
+		fmt.Fprintf(os.Stderr,
+		"Veil [%s] running in count mode, press CTRL-C to stop and show summary\n",
+		cfg.Module)
+	} else {
+		fmt.Fprintf(os.Stderr,
+		"Veil [%s] running, press CTRL-C to pause and modify filters\n",
+		cfg.Module)
+	}
 
 	/*
 		Two-stage signal handling:
@@ -272,6 +317,14 @@ func main() {
 	}
  
 	close(done)
+
+	/*
+		If count mode is active, print the summary now that all modules have
+		stopped producing events.
+	*/
+	if countSink != nil {
+		countSink.Close()
+	}
 }
 
 /*

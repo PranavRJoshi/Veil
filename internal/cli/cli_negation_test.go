@@ -196,3 +196,67 @@ func TestParseNegationWithEnrich(t *testing.T) {
 		t.Errorf("EnrichFlags = %q, want %q", cfg.EnrichFlags, "all")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Count mode flags
+// ---------------------------------------------------------------------------
+
+func TestParseCountFlag(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--count"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.CountMode {
+		t.Error("expected CountMode to be true")
+	}
+}
+
+func TestParseCountByFlag(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--count-by", "comm"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.CountMode {
+		t.Error("--count-by should imply CountMode")
+	}
+	if cfg.CountKey != "comm" {
+		t.Errorf("CountKey = %q, want %q", cfg.CountKey, "comm")
+	}
+}
+
+func TestParseCountByMissingValue(t *testing.T) {
+	_, err := Parse([]string{"--module", "syscall", "--count-by"})
+	if err == nil {
+		t.Fatal("expected error for --count-by without value")
+	}
+}
+
+func TestParseCountNotSetByDefault(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.CountMode {
+		t.Error("CountMode should be false by default")
+	}
+	if cfg.CountKey != "" {
+		t.Errorf("CountKey should be empty by default, got %q", cfg.CountKey)
+	}
+}
+
+func TestParseCountWithFilters(t *testing.T) {
+	cfg, err := Parse([]string{
+		"--module", "syscall",
+		"--pid", "!1",
+		"--count",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.CountMode {
+		t.Error("expected CountMode to be true")
+	}
+	if cfg.ModuleFlags["pid_deny"] != "1" {
+		t.Errorf("pid_deny = %q, want %q", cfg.ModuleFlags["pid_deny"], "1")
+	}
+}
