@@ -185,6 +185,7 @@ Veil/
 ├── internal/
 │   ├── cli             # Command-line argument parser
 │   ├── control         # Interactive and socket control interface
+│   ├── count           # Count-only mode (suppresses default output)
 │   ├── enrich          # Event enrichment middleware
 │   ├── events          # Shared event types
 │   ├── exterrs         # errors.Join polyfill
