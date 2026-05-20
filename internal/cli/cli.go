@@ -54,10 +54,14 @@ Files module flags:
 Network module flags:
   --port <port>         Filter by port number (comma-separated)
 
+Scheduler module flags:
+  --cpu <cpu>           Filter by CPU core (comma-separated)
+
 Negation filter examples:
   --pid '!1234'         Exclude PID 1234
   --pid '100,!200'      Allow only PID 100, but never 200
   --syscall '!ioctl'    Exclude ioctl syscalls
+  --cpu '!0'            Exclude CPU 0
 `
 	fmt.Fprint(os.Stderr, u)
 }
@@ -220,6 +224,20 @@ func Parse(args []string) (Config, error) {
 				}
 				if deny != "" {
 					cfg.ModuleFlags["port_deny"] = deny
+				}
+
+		/* scheduler module specific */
+			case arg == "--cpu":
+				if i+1 >= len(args) {
+					return cfg, fmt.Errorf("--cpu requires a value")
+				}
+				i++
+				allow, deny := splitAllowDeny(args[i])
+				if allow != "" {
+					cfg.ModuleFlags["cpu"] = allow
+				}
+				if deny != "" {
+					cfg.ModuleFlags["cpu_deny"] = deny
 				}
 
 			case strings.HasPrefix(arg, "-"):

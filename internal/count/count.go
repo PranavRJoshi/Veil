@@ -40,6 +40,7 @@ var defaultKeyFields = map[string]string{
 	"syscall": "syscall",
 	"files":   "filename",
 	"network": "dport",
+	"scheduler": "next_comm",
 }
 
 /*
@@ -51,6 +52,8 @@ var defaultKeyFields = map[string]string{
 	Syscall: syscall, syscall_nr
 	Files: filename, op
 	Network: saddr, daddr, sport, dport, evt_type, oldstate, newstate
+	Scheduler: prev_pid, next_pid, prev_tid, next_tid, cpu, prev_state,
+	           prev_prio, next_prio, prev_comm, next_comm
 */
 var validKeyFields = map[string]bool{
 	/* common */
@@ -63,6 +66,10 @@ var validKeyFields = map[string]bool{
 	/* network */
 	"saddr": true, "daddr": true, "sport": true, "dport": true,
 	"evt_type": true, "oldstate": true, "newstate": true,
+	/* scheduler */
+	"prev_pid": true, "next_pid": true, "prev_tid": true, "next_tid": true,
+	"cpu": true, "prev_state": true, "prev_prio": true, "next_prio": true,
+	"prev_comm": true, "next_comm": true,
 }
 
 /*

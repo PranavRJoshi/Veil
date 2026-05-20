@@ -88,6 +88,27 @@ type NetworkEvent struct {
 }
 
 /*
+	SchedulerEvent represents a context switch captured by the
+	sched_switch tracepoint. It records which task was switched
+	out (Prev*) and which was switched in (Next*), along with
+	the CPU core and the reason the previous task yielded.
+*/
+type SchedulerEvent struct {
+	Event
+	PrevPID   uint32   /* PID of the task switched out */
+	NextPID   uint32   /* PID of the task switched in */
+	PrevTID   uint32   /* TID of the task switched out */
+	NextTID   uint32   /* TID of the task switched in */
+	CPU       uint32   /* CPU core where the switch happened */
+	PrevState uint64   /* why prev was descheduled (TASK_RUNNING, etc.) */
+	PrevPrio  uint32   /* scheduler priority of prev */
+	NextPrio  uint32   /* scheduler priority of next */
+	PrevComm  [8]byte  /* process name of prev task (truncated to 8) */
+	NextComm  [8]byte  /* process name of next task (truncated to 8) */
+}
+
+
+/*
 	ProcessName() method of Event structure.
 	A null terminator check is done, and the slice is returned,
 	else all 16 bytes of Comm field is returned.

@@ -34,7 +34,9 @@ func SyscallTextFormat(module string, f map[string]interface{}) string {
 	return prefix + base + suffix
 }
 
-// FilesTextFormat formats file-access events.
+/*
+	FilesTextFormat formats file-access events.
+*/
 func FilesTextFormat(module string, f map[string]interface{}) string {
 	var prefix string
 	if t, ok := f["time"]; ok {
@@ -56,7 +58,9 @@ func FilesTextFormat(module string, f map[string]interface{}) string {
 	return prefix + base + suffix
 }
 
-// NetworkTextFormat formats TCP connection lifecycle events.
+/*
+	NetworkTextFormat formats TCP connection lifecycle events.
+*/
 func NetworkTextFormat(module string, f map[string]interface{}) string {
 	var prefix string
 	if t, ok := f["time"]; ok {
@@ -82,6 +86,34 @@ func NetworkTextFormat(module string, f map[string]interface{}) string {
 }
 
 /*
+	SchedulerTextFormat formats context switch events.
+*/
+func SchedulerTextFormat(module string, f map[string]interface{}) string {
+	var prefix string
+	if t, ok := f["time"]; ok {
+		prefix = fmt.Sprintf("[%v] ", t)
+	}
+
+	base := fmt.Sprintf("CPU=%-3v %-8v PID=%-6v prio=%-3v -> %-8v PID=%-6v prio=%-3v  [%v]",
+		f["cpu"],
+		f["prev_comm"], f["prev_pid"], f["prev_prio"],
+		f["next_comm"], f["next_pid"], f["next_prio"],
+		f["prev_state"],
+	)
+
+	var suffix string
+	if u, ok := f["username"]; ok {
+		suffix += fmt.Sprintf(" user=%v", u)
+	}
+	if p, ok := f["proc_name"]; ok {
+		suffix += fmt.Sprintf(" proc=%v", p)
+	}
+
+	return prefix + base + suffix
+}
+
+
+/*
 	ModuleFormatters maps module names to their text formatters.
 	Used by the CLI to select the right formatter when --output=text (default).
 */
@@ -89,6 +121,7 @@ var ModuleFormatters = map[string]TextFormatFunc{
 	"syscall": SyscallTextFormat,
 	"files":   FilesTextFormat,
 	"network": NetworkTextFormat,
+	"scheduler": SchedulerTextFormat,
 }
 
 /*

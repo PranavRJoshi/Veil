@@ -23,6 +23,7 @@ import (
 	_ "github.com/PranavRJoshi/Veil/modules/syscall"
 	_ "github.com/PranavRJoshi/Veil/modules/files"
 	_ "github.com/PranavRJoshi/Veil/modules/network"
+	_ "github.com/PranavRJoshi/Veil/modules/scheduler"
 )
 
 func main() {
@@ -123,6 +124,7 @@ func main() {
 	var countSink *count.CountSink
 	if cfg.CountMode {
 		if cfg.CountKey != "" {
+			/* First check if the user provided a valid key */
 			if err := count.ValidateKeyField(cfg.CountKey); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
@@ -133,6 +135,7 @@ func main() {
 		}
 		countSink = count.NewCountSink(os.Stderr, 10)
 		if cfg.CountKey != "" {
+			/* Now assign the key to the Sink */
 			countSink.WithKeyField(cfg.CountKey)
 		}
 		sink = countSink
@@ -399,14 +402,16 @@ type compositeUpdater struct {
 	"syscall" is syscall-only, "port" is network-only.
 */
 var mapOwnership = map[string][]string{
-	"pid":           {"syscall", "files", "network"},
-	"uid":           {"syscall", "files", "network"},
+	"pid":           {"syscall", "files", "network", "scheduler"},
+	"uid":           {"syscall", "files", "network", "scheduler"},
 	"syscall":       {"syscall"},
 	"port":          {"network"},
-	"pid_deny":      {"syscall", "files", "network"},
-	"uid_deny":      {"syscall", "files", "network"},
+	"cpu":           {"scheduler"},
+	"pid_deny":      {"syscall", "files", "network", "scheduler"},
+	"uid_deny":      {"syscall", "files", "network", "scheduler"},
 	"syscall_deny":  {"syscall"},
 	"port_deny":     {"network"},
+	"cpu_deny":      {"scheduler"},
 }
 
 /*
