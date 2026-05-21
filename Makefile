@@ -14,6 +14,10 @@ NETWORK_MODULE_DIR := $(MODULE_DIR)/network
 NETWORK_BPF2GO := $(NETWORK_MODULE_DIR)/networktracer_bpfeb.go $(NETWORK_MODULE_DIR)/networktracer_bpfel.go
 NETWORK_BPF2GO_OBJS := $(NETWORK_MODULE_DIR)/networktracer_bpfeb.o $(NETWORK_MODULE_DIR)/networktracer_bpfel.o
 
+SCHEDULER_MODULE_DIR := $(MODULE_DIR)/scheduler
+SCHEDULER_BPF2GO := $(SCHEDULER_MODULE_DIR)/tracer_bpfeb.go $(SCHEDULER_MODULE_DIR)/tracer_bpfel.go
+SCHEDULER_BPF2GO_OBJS := $(SCHEDULER_MODULE_DIR)/tracer_bpfeb.o $(SCHEDULER_MODULE_DIR)/tracer_bpfel.o
+
 .PHONY: all generate clean
 
 all: generate build
@@ -31,4 +35,5 @@ build:
 clean:
 	rm -f bin/kernscope bpf/headers/vmlinux.h $(SYSCALL_BPF2GO) \
 	$(SYSCALL_BPF2GO_OBJS) $(FILES_BPF2GO) $(FILES_BPF2GO_OBJS) \
-	$(NETWORK_BPF2GO) $(NETWORK_BPF2GO_OBJS) $(BIN)
+	$(NETWORK_BPF2GO) $(NETWORK_BPF2GO_OBJS) $(SCHEDULER_BPF2GO) \
+	$(SCHEDULER_BPF2GO_OBJS) $(BIN)
