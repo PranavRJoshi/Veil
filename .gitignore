@@ -1,3 +1,2 @@
 bpf/headers/vmlinux.h
-modules/syscall/syscall_table.go
 bin/
