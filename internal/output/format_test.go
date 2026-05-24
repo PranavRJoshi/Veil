@@ -194,8 +194,8 @@ func TestDispatchTextFormat_UnknownModule(t *testing.T) {
 	dispatch := DispatchTextFormat()
 	fields := map[string]interface{}{"foo": "bar"}
 
-	got := dispatch("scheduler", fields)
-	if !strings.Contains(got, "[scheduler]") {
+	got := dispatch("unknownmodule", fields)
+	if !strings.Contains(got, "[unknownmodule]") {
 		t.Errorf("fallback should use generic format: %q", got)
 	}
 }
