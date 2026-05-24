@@ -35,10 +35,19 @@ jobs:
             go tool cover -func=coverage.out
           fi
 
-      - name: Upload coverage
+      - name: Generate html coverage report
+        if: always()
+        run: |
+          if [ -f coverage.out ]; then
+            go tool cover -html=coverage.out -o coverage.html
+          fi
+
+      - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-profile
-          path: coverage.out
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html
           retention-days: 10
