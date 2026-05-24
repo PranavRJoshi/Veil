@@ -1,6 +1,6 @@
 package scheduler
 
-//go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -target bpf" Tracer ../../bpf/sched_tracer.bpf.c
+//go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -target bpf" SchedulerTracer ../../bpf/sched_tracer.bpf.c
 
 /*
 	Scheduler module for Veil.
@@ -143,7 +143,7 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 
 type SchedulerModule struct {
 	*loader.BaseProgram
-	objs    TracerObjects
+	objs    SchedulerTracerObjects
 	link    link.Link
 	reader  *ringbuf.Reader
 	Events  chan events.SchedulerEvent
@@ -249,7 +249,7 @@ func (t *SchedulerModule) populateFilters() error {
 }
 
 func (t *SchedulerModule) Load() error {
-	if err := LoadTracerObjects(&t.objs, nil); err != nil {
+	if err := LoadSchedulerTracerObjects(&t.objs, nil); err != nil {
 		return fmt.Errorf("scheduler: load objects: %w", err)
 	}
 
