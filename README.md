@@ -129,29 +129,29 @@ See [`docs/USAGE.md`](docs/USAGE.md) for the complete CLI reference with practic
 
 ```
 Veil/
-├── bpf/                   # BPF C programs (kernel-side)
-│   └── headers/           # vmlinux.h (generated)
-├── cmd/
-│   ├── gen/syscalls       # generates syscall number → name table
-│   └── veil/              # main CLI, module wiring, composite updater
-├── docs/                  # usage reference, optimization notes
+├── bpf/                # eBPF C programs (kernel-side)
+│   └── headers         # vmlinux.h and shared BPF headers
+├── cmd/                # CLI
+│   ├── gen/            # parse unistd.h from host and gen syscall table
+│   │   └── syscalls
+│   └── veil            # main CLI application
 ├── internal/
-│   ├── cli                # argument parsing, splitAllowDeny
-│   ├── control            # interactive prompt + Unix socket server
-│   ├── count              # count/summary mode sink
-│   ├── enrich             # event enrichment middleware (time, proc, user)
-│   ├── events             # shared event type definitions
-│   ├── exterrs            # errors.Join polyfill (Go <1.20)
-│   ├── loader             # BPF program lifecycle (BaseProgram, Manager)
-│   ├── output             # sink pipeline (text, JSON, pausable, fan-out)
-│   ├── registry           # module self-registration
-│   └── runner             # multi-module orchestration
+│   ├── cli             # Command-line argument parser
+│   ├── control         # Interactive and socket control interface
+│   ├── count           # Count-only mode (suppresses default output)
+│   ├── enrich          # Event enrichment middleware
+│   ├── events          # Shared event types
+│   ├── exterrs         # errors.Join polyfill
+│   ├── loader          # BPF program lifecycle
+│   ├── output          # Output sink pipeline (text, JSON)
+│   ├── registry        # Module self-registration
+│   └── runner          # Multi-module orchestration
 └── modules/
-    ├── syscall            # raw_syscalls/sys_enter
-    ├── files              # vfs_open, vfs_read, vfs_write kprobes
-    ├── network            # TCP state tracing (tracepoint + kprobes)
-    ├── scheduler          # sched_switch tracepoint
-    └── memory             # handle_mm_fault kprobe/kretprobe
+    ├── files           # File access tracing
+    ├── memory          # Memory fault tracing
+    ├── network         # TCP connection tracing
+    ├── scheduler       # Context switch tracing
+    └── syscall         # System call tracing
 ```
 
 ## License
