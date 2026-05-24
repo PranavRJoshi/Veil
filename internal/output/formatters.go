@@ -112,6 +112,30 @@ func SchedulerTextFormat(module string, f map[string]interface{}) string {
 	return prefix + base + suffix
 }
 
+/*
+	MemoryTextFormat formats page fault events.
+*/
+func MemoryTextFormat(module string, f map[string]interface{}) string {
+	var prefix string
+	if t, ok := f["time"]; ok {
+		prefix = fmt.Sprintf("[%v] ", t)
+	}
+
+	base := fmt.Sprintf("%-16s PID=%-6v TID=%-6v UID=%-5v fault=%-7v addr=%v",
+		f["comm"], f["pid"], f["tid"], f["uid"],
+		f["evt_type"], f["address"],
+	)
+
+	var suffix string
+	if u, ok := f["username"]; ok {
+		suffix += fmt.Sprintf(" user=%v", u)
+	}
+	if p, ok := f["proc_name"]; ok {
+		suffix += fmt.Sprintf(" proc=%v", p)
+	}
+
+	return prefix + base + suffix
+}
 
 /*
 	ModuleFormatters maps module names to their text formatters.
@@ -122,6 +146,7 @@ var ModuleFormatters = map[string]TextFormatFunc{
 	"files":   FilesTextFormat,
 	"network": NetworkTextFormat,
 	"scheduler": SchedulerTextFormat,
+	"memory": MemoryTextFormat,
 }
 
 /*

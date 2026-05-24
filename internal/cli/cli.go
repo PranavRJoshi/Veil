@@ -49,13 +49,16 @@ Syscall module flags:
 
 Files module flags:
   --op <op>             Filter by operation: open, read, write (comma-separated)
-  --file <name>		    Filter by filename (substring match)
+  --file <name>         Filter by filename (substring match)
 
 Network module flags:
   --port <port>         Filter by port number (comma-separated)
 
 Scheduler module flags:
   --cpu <cpu>           Filter by CPU core (comma-separated)
+
+Memory module flags:
+  --fault <type>        Filter by fault type: major, minor (comma-separated)
 
 Negation filter examples:
   --pid '!1234'         Exclude PID 1234
@@ -84,7 +87,7 @@ func Parse(args []string) (Config, error) {
 		os.Exit(0)
 	}
 
-	i := 0		/* used as index for argument vector */
+	i := 0      /* used as index for argument vector */
 	/* parse all the supplied command line arguments */
 	for i < len(args) {
 		arg := args[i]
@@ -240,6 +243,20 @@ func Parse(args []string) (Config, error) {
 					cfg.ModuleFlags["cpu_deny"] = deny
 				}
 
+		/* memory module specific */
+			case arg == "--fault":
+				if i+1 >= len(args) {
+					return cfg, fmt.Errorf("--fault requires a value")
+				}
+				i++
+				allow, deny := splitAllowDeny(args[i])
+				if allow != "" {
+					cfg.ModuleFlags["fault"] = allow
+				}
+				if deny != "" {
+					cfg.ModuleFlags["fault_deny"] = deny
+				}
+
 			case strings.HasPrefix(arg, "-"):
 				return cfg, fmt.Errorf("unknown flag: %s", arg)
 
@@ -281,10 +298,6 @@ func PrintModules() {
 	for _, info := range registry.All() {
 		fmt.Printf("  %-12s %s\n", info.Name, info.Description)
 	}
-	fmt.Println()
-	fmt.Println("Planned modules:")
-	fmt.Println("  scheduler - CPU run queue latency profiling")
-	fmt.Println("  memory    - OOM event inspection and page fault tracing")
 }
 
 func Usage() {

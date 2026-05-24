@@ -24,6 +24,7 @@ import (
 	_ "github.com/PranavRJoshi/Veil/modules/files"
 	_ "github.com/PranavRJoshi/Veil/modules/network"
 	_ "github.com/PranavRJoshi/Veil/modules/scheduler"
+	_ "github.com/PranavRJoshi/Veil/modules/memory"
 )
 
 func main() {
@@ -277,7 +278,6 @@ func main() {
 				case <-stopMonitor:
 					return
 			}
-
 		}()
 
 		/*
@@ -381,7 +381,7 @@ func buildUpdater(modules []runner.Module, names []string) control.MapUpdater {
 /*
 	compositeUpdater dispatches control commands to the correct module's
 	MapUpdater based on a module prefix in the map name.
- 
+
 	Plain map name ("pid", "port"):
 		Routes via mapOwnership. Shared maps (pid, uid) are sent to all lodaded
 		modules. Module-specific maps (syscall, port) are sent to their owner only.
@@ -395,23 +395,25 @@ func buildUpdater(modules []runner.Module, names []string) control.MapUpdater {
 type compositeUpdater struct {
 	updaters map[string]control.MapUpdater
 }
- 
+
 /*
 	mapOwnership defines which modules own which map names.
 	"pid" and "uid" are universal--all modules have them.
 	"syscall" is syscall-only, "port" is network-only.
 */
 var mapOwnership = map[string][]string{
-	"pid":           {"syscall", "files", "network", "scheduler"},
-	"uid":           {"syscall", "files", "network", "scheduler"},
+	"pid":           {"syscall", "files", "network", "scheduler", "memory"},
+	"uid":           {"syscall", "files", "network", "scheduler", "memory"},
 	"syscall":       {"syscall"},
 	"port":          {"network"},
 	"cpu":           {"scheduler"},
-	"pid_deny":      {"syscall", "files", "network", "scheduler"},
-	"uid_deny":      {"syscall", "files", "network", "scheduler"},
+	"fault":         {"memory"},
+	"pid_deny":      {"syscall", "files", "network", "scheduler", "memory"},
+	"uid_deny":      {"syscall", "files", "network", "scheduler", "memory"},
 	"syscall_deny":  {"syscall"},
 	"port_deny":     {"network"},
 	"cpu_deny":      {"scheduler"},
+	"fault_deny":    {"memory"},
 }
 
 /*
@@ -545,7 +547,7 @@ func (c *compositeUpdater) ClearFilters(mapName string) error {
 
 	return firstErr
 }
- 
+
 func (c *compositeUpdater) Status() string {
 	var parts []string
 	for _, u := range c.updaters {
@@ -568,15 +570,15 @@ type stubUpdater struct {
 func (s *stubUpdater) AddFilter(mapName string, key uint64) error {
 	return fmt.Errorf("module %q does not support runtime filter modification", s.module)
 }
- 
+
 func (s *stubUpdater) DelFilter(mapName string, key uint64) error {
 	return fmt.Errorf("module %q does not support runtime filter modification", s.module)
 }
- 
+
 func (s *stubUpdater) ListFilters(mapName string) ([]uint64, error) {
 	return nil, fmt.Errorf("module %q does not support runtime filter modification", s.module)
 }
- 
+
 func (s *stubUpdater) ClearFilters(mapName string) error {
 	return fmt.Errorf("module %q does not support runtime filter modification", s.module)
 }

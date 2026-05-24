@@ -4,15 +4,15 @@
 //
 // Usage in the pipeline:
 //
-//	countSink := count.NewCountSink(os.Stderr, 10)
-//	// pass countSink as the module's EventSink
-//	// on shutdown: countSink.Close() prints the summary
+//   countSink := count.NewCountSink(os.Stderr, 10)
+//   // pass countSink as the module's EventSink
+//   // on shutdown: countSink.Close() prints the summary
 //
 // The aggregation key is selected automatically per module:
 //
-//	syscall  -> "syscall" (e.g. openat, read, write)
-//	files    -> "filename" (e.g. /etc/passwd)
-//	network  -> "dport" (destination port, e.g. 443)
+//   syscall  -> "syscall" (e.g. openat, read, write)
+//   files    -> "filename" (e.g. /etc/passwd)
+//   network  -> "dport" (destination port, e.g. 443)
 //
 // For --count-by variant, the argument to it requires
 // a valid key. Upon invalid key, the program will
@@ -41,6 +41,7 @@ var defaultKeyFields = map[string]string{
 	"files":   "filename",
 	"network": "dport",
 	"scheduler": "next_comm",
+	"memory": "evt_type",
 }
 
 /*
@@ -54,6 +55,7 @@ var defaultKeyFields = map[string]string{
 	Network: saddr, daddr, sport, dport, evt_type, oldstate, newstate
 	Scheduler: prev_pid, next_pid, prev_tid, next_tid, cpu, prev_state,
 	           prev_prio, next_prio, prev_comm, next_comm
+	Memory: evt_type (shared with network), address
 */
 var validKeyFields = map[string]bool{
 	/* common */
@@ -70,6 +72,8 @@ var validKeyFields = map[string]bool{
 	"prev_pid": true, "next_pid": true, "prev_tid": true, "next_tid": true,
 	"cpu": true, "prev_state": true, "prev_prio": true, "next_prio": true,
 	"prev_comm": true, "next_comm": true,
+	/* memory */
+	"address": true,
 }
 
 /*
@@ -81,7 +85,7 @@ func ValidateKeyField(field string) error {
 	if validKeyFields[field] {
 		return nil
 	}
- 
+
 	valid := make([]string, 0, len(validKeyFields))
 	for k := range validKeyFields {
 		valid = append(valid, k)

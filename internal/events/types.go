@@ -42,13 +42,13 @@ func (k EventKind) String () string {
 	The common "envelope" for everything coming out of the kernel.
 */
 type Event struct {
-	Kind			EventKind
-	PID				uint32
-	TID				uint32
-	UID				uint32
-	GID				uint32
-	Comm			[16]byte		// kernel gives us 15 chars and 1 null terminator
-	Timestamp		uint64
+	Kind            EventKind
+	PID             uint32
+	TID             uint32
+	UID             uint32
+	GID             uint32
+	Comm            [16]byte     // kernel gives us 15 chars and 1 null terminator
+	Timestamp       uint64
 }
 
 /*
@@ -57,7 +57,7 @@ type Event struct {
 */
 type SyscallEvent struct {
 	Event
-	SyscallNr		uint64
+	SyscallNr       uint64
 }
 
 /*
@@ -66,8 +66,8 @@ type SyscallEvent struct {
 */
 type FileEvent struct {
 	Event
-	FileName string
-	Op string
+	FileName        string
+	Op              string
 }
 
 /*
@@ -107,6 +107,17 @@ type SchedulerEvent struct {
 	NextComm  [8]byte  /* process name of next task (truncated to 8) */
 }
 
+/*
+	MemoryEvent represents a page fault event captured by
+	the kprobe/kretprobe pair on handle_mm_fault. The fault
+	is classified as major (required disk I/O) or minor
+	(resolved in memory) from the kernel return value.
+*/
+type MemoryEvent struct {
+	Event
+	EvtType  uint8    /* 0 = major fault, 1 = minor fault */
+	Address  uint64   /* faulting virtual address */
+}
 
 /*
 	ProcessName() method of Event structure.
