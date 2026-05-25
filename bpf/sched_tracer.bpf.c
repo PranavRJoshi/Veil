@@ -43,8 +43,8 @@ struct sched_event {
     __u64 timestamp;
     __u32 prev_prio;
     __u32 next_prio;
-    __u8  prev_comm[8];
-    __u8  next_comm[8];
+    __u8  prev_comm[16];
+    __u8  next_comm[16];
 };
 
 /* Ring buffer for scheduler events */
@@ -192,12 +192,27 @@ int trace_sched_switch(struct trace_event_raw_sched_switch *ctx)
     e->next_prio  = ctx->next_prio;
 
     /*
-     * Copy comm names. We use 8 bytes (shortened from the usual 16) to keep
-     * the event struct compact. The tracepoint provides prev_comm and
+     * Copy comm names. The tracepoint provides prev_comm and
      * next_comm directly in its args.
+     *
+     * The problem with using __builtin_memcpy to copy 16 bytes
+     * of data from ctx's fields to ringbuffer is that optimized
+     * bpf program will transform the memcpy into multiple load/store
+     * operations. In my case, two 8 bytes load store operations are
+     * emitted by clang when -O2 is passed during compilation.
+     * The bpf verifier emits the error of type:
+     *     "dereference of modified ctx ptr R2 off = 8 disallowed"
+     * which suggests that load/store approach added offset to the
+     * context pointer, thereby modifying it, and then dereferencing
+     * it. '__check_ptr_off_reg' is responsible for throwing out this
+     * error. The link to source is:
+     *     https://elixir.bootlin.com/linux/v5.15.179/source/kernel/bpf/verifier.c#L3989
+     * Instead of relying on memcpy, we use bpf-helper to copy the data.
      */
-    __builtin_memcpy(e->prev_comm, ctx->prev_comm, 8);
-    __builtin_memcpy(e->next_comm, ctx->next_comm, 8);
+    // __builtin_memcpy(e->prev_comm, ctx->prev_comm, 16);
+    // __builtin_memcpy(e->next_comm, ctx->next_comm, 16);
+    bpf_probe_read_kernel(e->prev_comm, 16, ctx->prev_comm);
+    bpf_probe_read_kernel(e->next_comm, 16, ctx->next_comm);
 
     bpf_ringbuf_submit(e, 0);
     return 0;

@@ -18,11 +18,11 @@ type schedEvent struct {
 	Timestamp uint64
 	PrevPrio  uint32
 	NextPrio  uint32
-	PrevComm  [8]byte
-	NextComm  [8]byte
+	PrevComm  [16]byte
+	NextComm  [16]byte
 }
 
-const schedEventSize = 64
+const schedEventSize = 80
 
 func parseEvent(raw []byte) (events.SchedulerEvent, error) {
 	if len(raw) < schedEventSize {
@@ -41,8 +41,8 @@ func parseEvent(raw []byte) (events.SchedulerEvent, error) {
 		PrevPrio:  binary.LittleEndian.Uint32(raw[40:44]),
 		NextPrio:  binary.LittleEndian.Uint32(raw[44:48]),
 	}
-	copy(se.PrevComm[:], raw[48:56])
-	copy(se.NextComm[:], raw[56:64])
+	copy(se.PrevComm[:], raw[48:64])
+	copy(se.NextComm[:], raw[64:80])
 
 	return events.SchedulerEvent{
 		Event: events.Event{
@@ -68,9 +68,9 @@ func parseEvent(raw []byte) (events.SchedulerEvent, error) {
 
 /*
 	commString extracts a null-terminated string from a fixed-size byte
-	array. Used for the 8-byte prev_comm and next_comm fields.
+	array. Used for the 16-byte prev_comm and next_comm fields.
 */
-func commString(b [8]byte) string {
+func commString(b [16]byte) string {
 	for i, c := range b {
 		if c == 0 {
 			return string(b[:i])

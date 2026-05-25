@@ -188,7 +188,7 @@ func makeSchedModule(commName string) *SchedulerModule {
 }
 
 func makeSchedEvent(prevComm, nextComm string) events.SchedulerEvent {
-	var pc, nc [8]byte
+	var pc, nc [16]byte
 	copy(pc[:], prevComm)
 	copy(nc[:], nextComm)
 	return events.SchedulerEvent{
@@ -237,7 +237,7 @@ func TestMatchesFilter_SubstringMatch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSchedulerToFields_AllFieldsPresent(t *testing.T) {
-	var pc, nc [8]byte
+	var pc, nc [16]byte
 	copy(pc[:], "bash")
 	copy(nc[:], "nginx")
 
@@ -317,7 +317,7 @@ func TestSchedulerToFields_CommFieldCompatibility(t *testing.T) {
 		The "comm" and "pid" fields should be set for compatibility with
 		enrichment and count mode defaults.
 	*/
-	var pc [8]byte
+	var pc [16]byte
 	copy(pc[:], "test")
 	e := events.SchedulerEvent{
 		Event:    events.Event{Kind: events.KindScheduler},

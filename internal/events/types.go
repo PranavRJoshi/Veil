@@ -103,8 +103,8 @@ type SchedulerEvent struct {
 	PrevState uint64   /* why prev was descheduled (TASK_RUNNING, etc.) */
 	PrevPrio  uint32   /* scheduler priority of prev */
 	NextPrio  uint32   /* scheduler priority of next */
-	PrevComm  [8]byte  /* process name of prev task (truncated to 8) */
-	NextComm  [8]byte  /* process name of next task (truncated to 8) */
+	PrevComm  [16]byte  /* process name of prev task */
+	NextComm  [16]byte  /* process name of next task */
 }
 
 /*

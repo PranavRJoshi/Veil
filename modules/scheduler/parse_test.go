@@ -28,8 +28,8 @@ func buildRawSchedEvent(prevPID, nextPID, prevTID, nextTID, uid, cpu uint32,
 	binary.LittleEndian.PutUint32(buf[40:44], prevPrio)
 	binary.LittleEndian.PutUint32(buf[44:48], nextPrio)
 
-	copy(buf[48:56], prevComm)
-	copy(buf[56:64], nextComm)
+	copy(buf[48:64], prevComm)
+	copy(buf[64:80], nextComm)
 
 	return buf
 }
@@ -120,7 +120,7 @@ func TestParseEvent_ExtraBytes(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCommString_Normal(t *testing.T) {
-	var b [8]byte
+	var b [16]byte
 	copy(b[:], "bash")
 	if commString(b) != "bash" {
 		t.Errorf("got %q, want %q", commString(b), "bash")
@@ -128,7 +128,7 @@ func TestCommString_Normal(t *testing.T) {
 }
 
 func TestCommString_Full(t *testing.T) {
-	var b [8]byte
+	var b [16]byte
 	copy(b[:], "12345678")
 	if commString(b) != "12345678" {
 		t.Errorf("got %q, want %q", commString(b), "12345678")
@@ -136,7 +136,7 @@ func TestCommString_Full(t *testing.T) {
 }
 
 func TestCommString_Empty(t *testing.T) {
-	var b [8]byte
+	var b [16]byte
 	if commString(b) != "" {
 		t.Errorf("got %q, want empty", commString(b))
 	}

@@ -94,7 +94,7 @@ func SchedulerTextFormat(module string, f map[string]interface{}) string {
 		prefix = fmt.Sprintf("[%v] ", t)
 	}
 
-	base := fmt.Sprintf("CPU=%-3v %-8v PID=%-6v prio=%-3v -> %-8v PID=%-6v prio=%-3v  [%v]",
+	base := fmt.Sprintf("CPU=%-3v %-16v PID=%-6v prio=%-3v -> %-16v PID=%-6v prio=%-3v  [%v]",
 		f["cpu"],
 		f["prev_comm"], f["prev_pid"], f["prev_prio"],
 		f["next_comm"], f["next_pid"], f["next_prio"],
