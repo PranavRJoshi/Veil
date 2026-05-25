@@ -227,9 +227,157 @@ func TestParsePortFlag(t *testing.T) {
 }
 
 /*
+	TestParseCpuFlag verifies the --cpu flag.
+*/
+func TestParseCpuFlag(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--cpu", "0,1,2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModuleFlags["cpu"] != "0,1,2" {
+		t.Errorf("cpu = %q, want %q", cfg.ModuleFlags["cpu"], "0,1,2")
+	}
+}
+
+func TestParseCpuFlagSingleValue(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--cpu", "3"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModuleFlags["cpu"] != "3" {
+		t.Errorf("cpu = %q, want %q", cfg.ModuleFlags["cpu"], "3")
+	}
+}
+
+/*
+	TestParseCpuFlagWithDeny verifies that the '!' prefix in '--cpu' value
+	is correctly split into cpu (allow) and cpu_deny keys.
+*/
+func TestParseCpuFlagWithDeny(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--cpu", "0,!3"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModuleFlags["cpu"] != "0" {
+		t.Errorf("cpu = %q, want %q", cfg.ModuleFlags["cpu"], "0")
+	}
+	if cfg.ModuleFlags["cpu_deny"] != "3" {
+		t.Errorf("cpu_deny = %q, want %q", cfg.ModuleFlags["cpu_deny"], "3")
+	}
+}
+
+func TestParseCpuFlagDenyOnly(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--cpu", "!0"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := cfg.ModuleFlags["cpu"]; ok {
+		t.Errorf("cpu should not be set for deny-only, got %q", cfg.ModuleFlags["cpu"])
+	}
+	if cfg.ModuleFlags["cpu_deny"] != "0" {
+		t.Errorf("cpu_deny = %q, want %q", cfg.ModuleFlags["cpu_deny"], "0")
+	}
+}
+
+/*
+	TestParseCpuFlagMissingValue verifies that '--cpu' flag must have an
+	argument.
+*/
+func TestParseCpuFlagMissingValue(t *testing.T) {
+	_, err := Parse([]string{"--module", "syscall", "--cpu"})
+	if err == nil {
+		t.Fatal("expected error for --cpu without value")
+	}
+}
+
+/*
+	TestParseFaultFlag verifies the '--fault' flag.
+*/
+func TestParseFaultFlag(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--fault", "major,minor"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModuleFlags["fault"] != "major,minor" {
+		t.Errorf("fault = %q, want %q", cfg.ModuleFlags["fault"], "major,minor")
+	}
+}
+
+func TestParseFaultFlagSingleValue(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--fault", "major"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModuleFlags["fault"] != "major" {
+		t.Errorf("fault = %q, want %q", cfg.ModuleFlags["fault"], "major")
+	}
+}
+
+/*
+	TestParseFaultFlagWithDeny verifies deny splitting for '--fault'.
+*/
+func TestParseFaultFlagWithDeny(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--fault", "minor,!major"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModuleFlags["fault"] != "minor" {
+		t.Errorf("fault = %q, want %q", cfg.ModuleFlags["fault"], "minor")
+	}
+	if cfg.ModuleFlags["fault_deny"] != "major" {
+		t.Errorf("fault_deny = %q, want %q", cfg.ModuleFlags["fault_deny"], "major")
+	}
+}
+
+func TestParseFaultFlagDenyOnly(t *testing.T) {
+	cfg, err := Parse([]string{"--module", "syscall", "--fault", "!major"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := cfg.ModuleFlags["fault"]; ok {
+		t.Errorf("fault should not be set for deny-only, got %q", cfg.ModuleFlags["fault"])
+	}
+	if cfg.ModuleFlags["fault_deny"] != "major" {
+		t.Errorf("fault_deny = %q, want %q", cfg.ModuleFlags["fault_deny"], "major")
+	}
+}
+
+func TestParseFaultFlagMissingValue(t *testing.T) {
+	_, err := Parse([]string{"--module", "syscall", "--fault"})
+	if err == nil {
+		t.Fatal("expected error for --fault without value")
+	}
+}
+
+/*
+	TestParseCpuAndFaultTogether verifies that module-specific flags do not
+	interfere with each other or with global flags when used in combination.
+*/
+func TestParseCpuAndFaultTogether(t *testing.T) {
+	cfg, err := Parse([]string{
+		"--module", "syscall",
+		"--cpu", "0,1",
+		"--fault", "minor",
+		"--pid", "1234",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModuleFlags["cpu"] != "0,1" {
+		t.Errorf("cpu = %q, want %q", cfg.ModuleFlags["cpu"], "0,1")
+	}
+	if cfg.ModuleFlags["fault"] != "minor" {
+		t.Errorf("fault = %q, want %q", cfg.ModuleFlags["fault"], "minor")
+	}
+	if cfg.ModuleFlags["pid"] != "1234" {
+		t.Errorf("pid = %q, want %q", cfg.ModuleFlags["pid"], "1234")
+	}
+}
+
+/*
 	Control flag (--control)
 */
- 
+
 func TestParseControlFlag(t *testing.T) {
 	cfg, err := Parse([]string{"--module", "syscall", "--control", "/tmp/veil.sock"})
 	if err != nil {
@@ -239,14 +387,14 @@ func TestParseControlFlag(t *testing.T) {
 		t.Errorf("expected ControlPath '/tmp/veil.sock', got %q", cfg.ControlPath)
 	}
 }
- 
+
 func TestParseControlFlagMissingValue(t *testing.T) {
 	_, err := Parse([]string{"--module", "syscall", "--control"})
 	if err == nil {
 		t.Fatal("expected error for --control without value")
 	}
 }
- 
+
 func TestParseControlPathNotSetByDefault(t *testing.T) {
 	cfg, err := Parse([]string{"--module", "syscall"})
 	if err != nil {
@@ -260,7 +408,7 @@ func TestParseControlPathNotSetByDefault(t *testing.T) {
 /*
 	Enrichment flag (--enrich)
 */
- 
+
 func TestParseEnrichFlag(t *testing.T) {
 	cfg, err := Parse([]string{"--module", "syscall", "--enrich", "time,proc"})
 	if err != nil {
@@ -270,7 +418,7 @@ func TestParseEnrichFlag(t *testing.T) {
 		t.Errorf("expected EnrichFlags 'time,proc', got %q", cfg.EnrichFlags)
 	}
 }
- 
+
 func TestParseEnrichAll(t *testing.T) {
 	cfg, err := Parse([]string{"--module", "syscall", "--enrich", "all"})
 	if err != nil {
@@ -280,14 +428,14 @@ func TestParseEnrichAll(t *testing.T) {
 		t.Errorf("expected EnrichFlags 'all', got %q", cfg.EnrichFlags)
 	}
 }
- 
+
 func TestParseEnrichFlagMissingValue(t *testing.T) {
 	_, err := Parse([]string{"--module", "syscall", "--enrich"})
 	if err == nil {
 		t.Fatal("expected error for --enrich without value")
 	}
 }
- 
+
 func TestParseEnrichNotSetByDefault(t *testing.T) {
 	cfg, err := Parse([]string{"--module", "syscall"})
 	if err != nil {
@@ -297,11 +445,28 @@ func TestParseEnrichNotSetByDefault(t *testing.T) {
 		t.Errorf("expected empty EnrichFlags by default, got %q", cfg.EnrichFlags)
 	}
 }
- 
+
+func TestParseCpuDenyWithEnrich(t *testing.T) {
+	cfg, err := Parse([]string{
+		"--module", "syscall",
+		"--cpu", "!0,!1",
+		"--enrich", "time",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ModuleFlags["cpu_deny"] != "0,1" {
+		t.Errorf("cpu_deny = %q, want %q", cfg.ModuleFlags["cpu_deny"], "0,1")
+	}
+	if cfg.EnrichFlags != "time" {
+		t.Errorf("EnrichFlags = %q, want %q", cfg.EnrichFlags, "time")
+	}
+}
+
 /*
 	Multi-module (--module name,name)
 */
- 
+
 func TestParseMultiModule(t *testing.T) {
 	cfg, err := Parse([]string{"--module", "syscall,network"})
 	if err != nil {
@@ -311,7 +476,7 @@ func TestParseMultiModule(t *testing.T) {
 		t.Errorf("expected 'syscall,network', got %q", cfg.Module)
 	}
 }
- 
+
 func TestParseMultiModuleWithSpaces(t *testing.T) {
 	cfg, err := Parse([]string{"--module", "syscall, network"})
 	if err != nil {
@@ -321,14 +486,14 @@ func TestParseMultiModuleWithSpaces(t *testing.T) {
 		t.Errorf("expected 'syscall, network', got %q", cfg.Module)
 	}
 }
- 
+
 func TestParseMultiModuleOneInvalid(t *testing.T) {
 	_, err := Parse([]string{"--module", "syscall,errmod"})
 	if err == nil {
 		t.Fatal("expected error for unknown module in multi-module list")
 	}
 }
- 
+
 func TestParseMultiModuleAllThree(t *testing.T) {
 	cfg, err := Parse([]string{"--module", "syscall,files,network", "--pid", "1234"})
 	if err != nil {
@@ -341,7 +506,7 @@ func TestParseMultiModuleAllThree(t *testing.T) {
 		t.Errorf("expected pid '1234', got %q", cfg.ModuleFlags["pid"])
 	}
 }
- 
+
 func TestParseMultiModuleEmptyName(t *testing.T) {
 	_, err := Parse([]string{"--module", "syscall,,network"})
 	if err == nil {
