@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 
@@ -43,6 +44,31 @@ func main() {
 	if cfg.ListModules {
 		cli.PrintModules()
 		os.Exit(0)
+	}
+
+	/*
+		CPU profiling: start recording CPU samples using Go's runtime/pprof.
+		The profile is written to the specified file path when the program
+		exits via the deferred StopCPUProfile call. The output can be
+		analyzed using:
+
+		        go tool pprof -http=:8080 <path>
+
+		This opens an interactive browser UI with flamegraphs, top functions,
+		source annotation, and call graphs.
+	*/
+	if cfg.PprofPath != "" {
+		pprofFile, err := os.Create(cfg.PprofPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pprof: %v\n", err)
+			os.Exit(1)
+		}
+		pprof.StartCPUProfile(pprofFile)
+		defer func() {
+			pprof.StopCPUProfile()
+			pprofFile.Close()
+			fmt.Fprintf(os.Stderr, "CPU profile written to %s\n", cfg.PprofPath)
+		}()
 	}
 
 	/*

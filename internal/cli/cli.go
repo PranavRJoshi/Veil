@@ -19,6 +19,7 @@ type Config struct {
 	EnrichFlags  string            /* --enrich <opts>: time,proc,user,all */
 	CountMode    bool              /* --count: enable count/summary mode */
 	CountKey     string            /* --count-by <field>: override aggregation key */
+	PprofPath    string            /* --pprof <path>: write CPU profile on exit */
 	ListModules  bool              /* --list-modules */
 	ShowHelp     bool              /* --help or -h */
 }
@@ -37,6 +38,7 @@ Global flags:
   --count            Enable count/summary mode: suppress live output, show top-N on exit
   --count-by <field> Override aggregation key (default: per-module, e.g., syscall, file, dport)
   --control <path>   Start a Unix socket control server at <path>
+  --pprof <path>     Write CPU profile to <path> on exit (use with go tool pprof)
   -h, --help         Show this help message
 
 Common filter flags:
@@ -139,6 +141,13 @@ func Parse(args []string) (Config, error) {
 				i++
 				cfg.CountKey = args[i]
 				cfg.CountMode = true     /* --count-by implies --count */
+
+			case arg == "--pprof":
+				if i+1 >= len(args) {
+					return cfg, fmt.Errorf("--pprof requires an output file path")
+				}
+				i++
+				cfg.PprofPath = args[i]
 
 			/*
 				Short-form: -p, -n, -s all take a value argument.
