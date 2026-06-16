@@ -81,7 +81,7 @@ sudo ./bin/veil --module syscall -u 0 -p '!1'
 
 ### files module
 
-Traces file open, read, and write operations via kprobes on `vfs_open`, `vfs_read`, and `vfs_write`.
+Traces file open, read, and write operations via kprobes on `vfs_open`, `vfs_read`, and `vfs_write`. The `filename` field contains the full absolute path resolved by walking the kernel dentry chain at event time.
 
 **Flags:**
 
@@ -91,9 +91,22 @@ Traces file open, read, and write operations via kprobes on `vfs_open`, `vfs_rea
 | `--uid <uid>` | Filter by UID (comma-separated, supports `!` negation) |
 | `--name <name>` | Filter by process name (substring match, userspace) |
 | `--op <op>` | Filter by operation: `open`, `read`, `write` (comma-separated) |
-| `--file <name>` | Filter by filename (substring match, userspace) |
+| `--file <path>` | Filter by path (userspace, path-aware -- see below) |
 
-**Output fields:** `comm`, `pid`, `uid`, `op`, `filename`, `timestamp`
+**`--file` matching modes:**
+
+The filter value's shape determines how it is matched against the full absolute path:
+
+| Filter value | Mode | Matches | Does not match |
+|---|---|---|---|
+| `/etc/hosts` | Exact path | `/etc/hosts` | `/usr/etc/hosts`, `/etc/hosts.bak` |
+| `/etc/` | Directory prefix | `/etc/hosts`, `/etc/passwd` | `/usr/etc/hosts` |
+| `etc/hosts` | Path suffix | `/etc/hosts` | `/usr/share/hosts` |
+| `hosts` | Substring | `/etc/hosts`, `/var/lib/hosts` | `/etc/shadow` |
+
+A leading `/` anchors the match to the path root. A trailing `/` matches everything under that directory. A value containing `/` but not leading anchors to a path suffix. A plain name matches anywhere in the path.
+
+**Output fields:** `comm`, `pid`, `uid`, `op`, `filename` (absolute path), `timestamp`
 
 **Examples:**
 
@@ -101,8 +114,14 @@ Traces file open, read, and write operations via kprobes on `vfs_open`, `vfs_rea
 # Watch all file opens
 sudo ./bin/veil --module files --op open
 
-# Watch reads to anything in /etc
-sudo ./bin/veil --module files --op read --file /etc
+# Watch reads to any file under /etc (directory prefix)
+sudo ./bin/veil --module files --op read --file /etc/
+
+# Watch access to exactly /etc/passwd
+sudo ./bin/veil --module files --file /etc/passwd
+
+# Watch access to any file named hosts anywhere on the filesystem
+sudo ./bin/veil --module files --file hosts
 
 # Watch what a specific process touches
 sudo ./bin/veil --module files -p $(pidof postgres)
@@ -366,7 +385,7 @@ One line per event. Each module has its own formatter:
 
 ```
 bash             PID=1234   TID=1234   UID=0     GID=0     syscall=openat(257)
-cat              PID=5678   UID=1000  op=open  filename=hosts
+cat              PID=5678   UID=1000  op=open  filename=/etc/hosts
 nc               PID=9012   CONNECT      127.0.0.1:5432 -> 127.0.0.1:1234 [CLOSE->SYN_SENT]
 CPU=2   bash     PID=1234   prio=120 -> nginx    PID=5678   prio=120  [SLEEPING]
 bash             PID=1234   TID=1234   UID=0     fault=major   addr=0x7f4a2c001000
@@ -521,7 +540,7 @@ veil $ add pid 1234                 # adds PID 1234 to all loaded modules
 ### Investigate slow application startup
 
 ```bash
-# What files does the app touch on startup?
+# What files does the app touch on startup? (filename field shows absolute paths)
 sudo ./bin/veil --module files -p $(pidof myapp) --enrich time --output json > startup-files.jsonl
 
 # Are there major page faults stalling startup?
@@ -553,8 +572,14 @@ echo "add port 443" | socat - UNIX-CONNECT:/tmp/veil-net.sock
 ### Profile I/O patterns
 
 ```bash
-# Which files are read most frequently?
+# Which files are read most frequently? (absolute paths in output)
 sudo timeout 30 ./bin/veil --module files --op read --count
+
+# Which processes read from /etc?
+sudo ./bin/veil --module files --op read --file /etc/
+
+# Watch access to a specific file across all processes
+sudo ./bin/veil --module files --file /etc/passwd
 
 # Combined syscall + file view for a specific process
 sudo ./bin/veil --module syscall,files -p $(pidof postgres) --enrich time
