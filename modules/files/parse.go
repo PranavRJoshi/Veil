@@ -3,23 +3,36 @@ package files
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
 
 	"github.com/PranavRJoshi/Veil/internal/events"
 )
 
 /*
-	The following structure must match the one defined in file_access.bpf.c,
-	i.e., the file-based event sent by the bpf program.
+	The following structure must match the one defined in file_access.bpf.c.
+
+	Binary layout (little-endian, no implicit padding beyond the explicit _pad):
+	  [0:4]   pid
+	  [4:8]   tid
+	  [8:12]  uid
+	  [12:16] gid
+	  [16:24] timestamp
+	  [24:40] comm
+	  [40]    op
+	  [41:44] _pad (3 bytes, explicit alignment before components)
+	  [44:812] components[12][64]  (12 * 64 = 768 bytes)
+
+	Total minimum size: 812 bytes.
 */
 type fileEvent struct {
-	PID         uint32
-	TID         uint32
-	UID         uint32
-	GID         uint32
-	Timestamp   uint64
-	Comm        [16]byte
-	FileName    [256]byte
-	Op          uint8
+	PID        uint32
+	TID        uint32
+	UID        uint32
+	GID        uint32
+	Timestamp  uint64
+	Comm       [16]byte
+	Op         uint8
+	Components [12][64]byte
 }
 
 /*
@@ -39,28 +52,43 @@ func opName(op uint8) string {
 }
 
 /*
-	Parse the filename. The size of filename field is large for most files so
-	we need to slice the byte array. If it occupies all the bytes, then we
-	simply return the entire byte array as a string.
+	assembleFilePath reconstructs the absolute path from the component array.
+
+	The BPF program stores components leaf-first: components[0] is the
+	filename, components[1] is its parent directory, and so on. Each slot is
+	null-terminated; a slot whose first byte is zero marks the end of the
+	valid component list (ring buffer memory is zero-initialized).
+
+	The components are reversed and joined with '/' to produce the absolute
+	path. A single '/' is returned for the degenerate case (no components).
 */
-func parseFileName(raw [256]byte) string {
-	for i, b := range raw {
-		if b == 0 {
-			return string(raw[:i])
+func assembleFilePath(components [12][64]byte) string {
+	parts := make([]string, 0, 12)
+	for _, comp := range components {
+		if comp[0] == 0 {
+			break
 		}
+		end := 0
+		for end < len(comp) && comp[end] != 0 {
+			end++
+		}
+		parts = append(parts, string(comp[:end]))
 	}
-	return string(raw[:])
+	if len(parts) == 0 {
+		return "/"
+	}
+	/* Reverse: parts[0]=leaf, parts[n-1]=root-adjacent component. */
+	for j, k := 0, len(parts)-1; j < k; j, k = j+1, k-1 {
+		parts[j], parts[k] = parts[k], parts[j]
+	}
+	return "/" + strings.Join(parts, "/")
 }
 
 /*
 	Parse the file event information that was received.
 */
 func parseEvent(raw []byte) (events.FileEvent, error) {
-	/*
-		The actual size may be higher due to padding between fields,
-		but we don't take that into account.
-	*/
-	if len(raw) < 297 {
+	if len(raw) < 812 {
 		return events.FileEvent{}, fmt.Errorf("short read: %d bytes", len(raw))
 	}
 
@@ -70,10 +98,13 @@ func parseEvent(raw []byte) (events.FileEvent, error) {
 		UID:       binary.LittleEndian.Uint32(raw[8:12]),
 		GID:       binary.LittleEndian.Uint32(raw[12:16]),
 		Timestamp: binary.LittleEndian.Uint64(raw[16:24]),
-		Op:        raw[296],
+		Op:        raw[40],
 	}
 	copy(fe.Comm[:], raw[24:40])
-	copy(fe.FileName[:], raw[40:296])
+	/* raw[41:44] is explicit padding -- skip */
+	for i := 0; i < 12; i++ {
+		copy(fe.Components[i][:], raw[44+i*64:44+(i+1)*64])
+	}
 
 	return events.FileEvent{
 		Event: events.Event{
@@ -85,7 +116,7 @@ func parseEvent(raw []byte) (events.FileEvent, error) {
 			Timestamp: fe.Timestamp,
 			Comm:      fe.Comm,
 		},
-		FileName:      parseFileName(fe.FileName),
-		Op:            opName(fe.Op),
+		FileName: assembleFilePath(fe.Components),
+		Op:       opName(fe.Op),
 	}, nil
 }

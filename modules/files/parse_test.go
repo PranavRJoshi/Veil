@@ -8,41 +8,46 @@ import (
 )
 
 /*
-	Given the information required for the file_event structure passed
-	as argument to this function, construct a byte-array that holds
-	the information. Note that indexing is crucial here since we're
-	not returning a structure but an array of bytes.
-*/
-func buildFileRaw(pid, tid, uid, gid uint32, ts uint64, comm, file string, op uint8) []byte {
+	buildFileRaw constructs a raw byte buffer matching the file_event struct
+	layout from file_access.bpf.c.
 
-	buf := make([]byte, 297)
+	components is a slice of path component strings in leaf-first order
+	(components[0] = filename, components[1] = parent dir, etc.). Each is
+	written into a 64-byte null-padded slot starting at offset 44.
+*/
+func buildFileRaw(pid, tid, uid, gid uint32, ts uint64, comm string, op uint8, components []string) []byte {
+	buf := make([]byte, 812)
 	binary.LittleEndian.PutUint32(buf[0:4], pid)
 	binary.LittleEndian.PutUint32(buf[4:8], tid)
 	binary.LittleEndian.PutUint32(buf[8:12], uid)
 	binary.LittleEndian.PutUint32(buf[12:16], gid)
 	binary.LittleEndian.PutUint64(buf[16:24], ts)
 	copy(buf[24:40], comm)
-	copy(buf[40:296], file)
-	buf[296] = op
-
+	buf[40] = op
+	/* buf[41:44] = explicit padding, already zero */
+	for i, comp := range components {
+		if i >= 12 {
+			break
+		}
+		copy(buf[44+i*64:44+(i+1)*64], comp)
+	}
 	return buf
 }
 
 /*
-	TestParseFileEventBasic verifies that a well-formed 297-byte
-	buffer is parsed correctly with filename substring.
+	TestParseFileEventBasic verifies that a well-formed 812-byte buffer is
+	parsed correctly and that the path is assembled from components in
+	reverse (ancestor-first) order.
 */
 func TestParseFileEventBasic(t *testing.T) {
-	/* Construct a sequence of bytes that will be passed to parseEvent */
-	raw := buildFileRaw(5678, 5679, 1000, 1000, 12345, "nginx", "nginx.conf", 0)
+	/* components: leaf="nginx.conf", parent="etc" -> assembled as /etc/nginx.conf */
+	raw := buildFileRaw(5678, 5679, 1000, 1000, 12345, "nginx", 0, []string{"nginx.conf", "etc"})
 
-	/* initializes Kind to KindFileAccess, along with other fields  */
 	e, err := parseEvent(raw)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	/* open, read, or write */
 	if e.Kind != events.KindFileAccess {
 		t.Errorf("expected KindFileAccess, got %v", e.Kind)
 	}
@@ -64,8 +69,8 @@ func TestParseFileEventBasic(t *testing.T) {
 	if e.ProcessName() != "nginx" {
 		t.Errorf("expected comm 'nginx', got %q", e.ProcessName())
 	}
-	if e.FileName != "nginx.conf" {
-		t.Errorf("expected file 'nginx.conf', got %q", e.FileName)
+	if e.FileName != "/etc/nginx.conf" {
+		t.Errorf("expected file '/etc/nginx.conf', got %q", e.FileName)
 	}
 	if e.Op != "open" {
 		t.Errorf("expected op 'open', got %q", e.Op)
@@ -83,11 +88,11 @@ func TestParseFileEventOps(t *testing.T) {
 		{0, "open"},
 		{1, "read"},
 		{2, "write"},
-		{99, "op_99"},		/* check opName function defined in parse.go */
+		{99, "op_99"},
 	}
 
 	for _, c := range cases {
-		raw := buildFileRaw(1, 1, 0, 0, 0, "test", "x", c.op)
+		raw := buildFileRaw(1, 1, 0, 0, 0, "test", c.op, []string{"x"})
 		e, err := parseEvent(raw)
 		if err != nil {
 			t.Fatalf("unexpected error for op %d: %v", c.op, err)
@@ -99,11 +104,26 @@ func TestParseFileEventOps(t *testing.T) {
 }
 
 /*
-	TestParseFileEventShortRead verifies that buffers shorter than
-	297 bytes are rejected.
+	TestParseFileEventNoComponents verifies that an event with no components
+	produces "/" as the filename.
+*/
+func TestParseFileEventNoComponents(t *testing.T) {
+	raw := buildFileRaw(1, 1, 0, 0, 0, "test", 0, nil)
+	e, err := parseEvent(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if e.FileName != "/" {
+		t.Errorf("expected '/', got %q", e.FileName)
+	}
+}
+
+/*
+	TestParseFileEventShortRead verifies that buffers shorter than 812 bytes
+	are rejected.
 */
 func TestParseFileEventShortRead(t *testing.T) {
-	_, err := parseEvent(make([]byte, 296))
+	_, err := parseEvent(make([]byte, 811))
 	if err == nil {
 		t.Fatal("expected error for short buffer, got nil")
 	}

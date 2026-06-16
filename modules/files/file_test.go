@@ -203,6 +203,55 @@ func TestMatchesFilter_BothFilters(t *testing.T) {
 	}
 }
 
+func TestMatchesFilter_AbsolutePathExact(t *testing.T) {
+	mod := &FilesModule{filter: FilterConfig{FileName: "/etc/passwd"}}
+	if !mod.matchesFilter(makeFileEvent("cat", "/etc/passwd")) {
+		t.Error("exact absolute path should match")
+	}
+	if mod.matchesFilter(makeFileEvent("cat", "/usr/etc/passwd")) {
+		t.Error("different absolute path should not match")
+	}
+	if mod.matchesFilter(makeFileEvent("cat", "/etc/passwd.bak")) {
+		t.Error("path sharing only a string prefix should not match")
+	}
+}
+
+func TestMatchesFilter_AbsolutePathDirPrefix(t *testing.T) {
+	mod := &FilesModule{filter: FilterConfig{FileName: "/etc/"}}
+	if !mod.matchesFilter(makeFileEvent("cat", "/etc/passwd")) {
+		t.Error("file under /etc/ should match")
+	}
+	if !mod.matchesFilter(makeFileEvent("cat", "/etc/hosts")) {
+		t.Error("file under /etc/ should match")
+	}
+	if mod.matchesFilter(makeFileEvent("cat", "/usr/etc/passwd")) {
+		t.Error("file not directly under /etc/ should not match")
+	}
+}
+
+func TestMatchesFilter_RelativePathSuffix(t *testing.T) {
+	mod := &FilesModule{filter: FilterConfig{FileName: "etc/passwd"}}
+	if !mod.matchesFilter(makeFileEvent("cat", "/etc/passwd")) {
+		t.Error("path with matching suffix should pass")
+	}
+	if mod.matchesFilter(makeFileEvent("cat", "/usr/share/passwd")) {
+		t.Error("path without matching suffix should be filtered")
+	}
+}
+
+func TestMatchesFilter_NameSubstringOnFullPath(t *testing.T) {
+	mod := &FilesModule{filter: FilterConfig{FileName: "passwd"}}
+	if !mod.matchesFilter(makeFileEvent("cat", "/etc/passwd")) {
+		t.Error("name-only filter should match /etc/passwd")
+	}
+	if !mod.matchesFilter(makeFileEvent("cat", "/var/lib/passwd")) {
+		t.Error("name-only filter should match /var/lib/passwd")
+	}
+	if mod.matchesFilter(makeFileEvent("cat", "/etc/shadow")) {
+		t.Error("name-only filter should not match /etc/shadow")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // filesToFields
 // ---------------------------------------------------------------------------

@@ -5,7 +5,17 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
-#define MAX_FILENAME_LEN 256
+/*
+ * MAX_PATH_DEPTH: maximum number of dentry components collected per event.
+ * COMPONENT_LEN:  maximum bytes per component (including null terminator).
+ *
+ * Path components are stored leaf-first (components[0] = filename,
+ * components[1] = parent directory, ...). Userspace reassembles them in
+ * reverse to produce the absolute path. Paths deeper than MAX_PATH_DEPTH
+ * or with components longer than COMPONENT_LEN - 1 are truncated.
+ */
+#define MAX_PATH_DEPTH  12
+#define COMPONENT_LEN   64
 
 struct file_event {
     __u32 pid;
@@ -14,8 +24,9 @@ struct file_event {
     __u32 gid;
     __u64 timestamp;
     __u8  comm[16];
-    __u8  filename[MAX_FILENAME_LEN];
     __u8  op;                  /* 0=open, 1=read, 2=write */
+    __u8  _pad[3];             /* explicit padding to align components to 4 bytes */
+    __u8  components[MAX_PATH_DEPTH][COMPONENT_LEN];
 };
 
 #define OP_OPEN  0
@@ -90,7 +101,7 @@ static __always_inline int fill_common(struct file_event *e, __u8 op)
     __u32 pid		= pid_tgid >> 32;
     __u64 uid_gid	= bpf_get_current_uid_gid();
     __u32 uid		= (__u32)uid_gid;
- 
+
     /* Check filter maps before doing any work */
     __u32 cfg_key = 0;
     __u32 *cfg = bpf_map_lookup_elem(&filter_cfg, &cfg_key);
@@ -115,7 +126,7 @@ static __always_inline int fill_common(struct file_event *e, __u8 op)
         if ((mask & 2) && !bpf_map_lookup_elem(&uid_filter, &uid))
             return 1;
     }
- 
+
     e->pid       = pid;
     e->tid       = (__u32)pid_tgid;
     e->uid       = uid;
@@ -127,60 +138,61 @@ static __always_inline int fill_common(struct file_event *e, __u8 op)
 }
 
 /*
- * 'dentry' is a structure which is primarily used by the VFS. The pathname
- * argument passed to VFS system calls such as 'open(2)', 'read(2)', 'write(2)'
- * etc are used by the VFS to search through the directory entry cache (aka
- * dcache or dentry cache). VFS related kernel probes that are used here only
- * contain the leaf name instead of the absolute path.
+ * collect_path_fragments walks the dentry chain from leaf to root,
+ * storing each path component directly into e->components[i].
  *
- * For a complete documentation of VFS and dentry, check the link below:
- *		- https://www.kernel.org/doc/html/latest/filesystems/vfs.html
+ * Because the loop is unrolled with #pragma unroll, each access
+ * e->components[i] uses a compile-time constant offset from the ring
+ * buffer event pointer. The BPF verifier can statically verify every
+ * access is in-bounds without dynamic pointer arithmetic.
  *
- * This function is used by the read and write variant as the open variant
- * contains the path rather than the filename alone.
+ * Components are stored leaf-first: components[0] is the filename,
+ * components[1] is its parent directory, and so on. The first slot
+ * whose leading byte is zero (ring buffer memory is zero-initialized)
+ * marks the end. Userspace reverses the array and joins with '/' to
+ * produce the absolute path.
  *
- * TODO: Inspect some easier way to extract the filename if possible.
- *
- * BPF_CORE_READ is a CO-RE macro which was introduced in v0.0.6 of libbpf.
- * It is used to simplify BPF CO-RE relocatable read, especially when there
- * are few pointer chasing steps.
- *
- * As with macros in C, this one too expands to a layer of macros that can
- * be hard to track down. I'll try to demystify it later.
- *
- * The documentation for this macro can be found in the link below:
- *		- https://docs.ebpf.io/ebpf-library/libbpf/ebpf/BPF_CORE_READ/
- * The implementation detail can be located in the libbpf source:
- *		- https://github.com/libbpf/libbpf/blob/master/src/bpf_core_read.h#L525-L529
- *
- * Lastly, if you 'pahole(1)' in your system, consult the various structures that
- * are seen here for some further context.
+ * bpf_probe_read_kernel_str is used with the constant size COMPONENT_LEN
+ * so both the destination offset and the size are statically known.
  */
-static __always_inline void resolve_name_from_file(struct file *f, __u8 *buf, __u32 size)
+static __always_inline void collect_path_fragments(struct dentry *leaf,
+                                                   struct file_event *e)
 {
-    struct dentry *dentry = BPF_CORE_READ(f, f_path.dentry);
-    struct qstr d_name = BPF_CORE_READ(dentry, d_name);
-    bpf_probe_read_kernel_str(buf, size, d_name.name);
+    struct dentry *dentry = leaf;
+
+    #pragma unroll
+    for (int i = 0; i < MAX_PATH_DEPTH; i++) {
+        struct dentry *parent = BPF_CORE_READ(dentry, d_parent);
+
+        /* parent == dentry signals the filesystem root. */
+        if (parent == dentry)
+            break;
+
+        __u32 name_len = BPF_CORE_READ(dentry, d_name.len);
+        if (name_len == 0)
+            break;
+
+        const unsigned char *name_ptr =
+            (const unsigned char *)BPF_CORE_READ(dentry, d_name.name);
+
+        /*
+         * e->components[i] is at a constant offset because i is
+         * a compile-time constant after unrolling. COMPONENT_LEN is
+         * also a constant. The verifier accepts both without issue.
+         */
+        bpf_probe_read_kernel_str(e->components[i], COMPONENT_LEN, name_ptr);
+
+        dentry = parent;
+    }
 }
 
 /*
- * resolve_name_from_filename reads the leaf filename from struct path's
- * dentry. Used for vfs_open where filename is the first argument.
- */
-static __always_inline void resolve_name_from_path(const struct path *p, __u8 *buf, __u32 size)
-{
-    struct dentry *dentry = BPF_CORE_READ(p, dentry);
-    struct qstr d_name = BPF_CORE_READ(dentry, d_name);
-    bpf_probe_read_kernel_str(buf, size, d_name.name);
-}
-
-/*
- * Kprobe hooks on VFS functions. Each function reserves a ring buffer
- * slot, checks filters via fill_common, resolves the filename, and
- * submits. If the event is filtered out, the slot is discarded.
+ * Kprobe hooks on VFS functions. Each handler reserves a ring buffer
+ * slot, applies filters via fill_common, collects path components via
+ * collect_path_fragments, and submits. Filtered events are discarded.
  *
- * For vfs_open, we use the struct filename* first argument directly since
- * the struct file may not be fully initialized at entry time.
+ * For vfs_open the path argument provides the dentry directly. For
+ * vfs_read and vfs_write the dentry is read from file->f_path.
  */
 SEC("kprobe/vfs_open")
 int BPF_KPROBE(kprobe_vfs_open, const struct path *path, struct file *file)
@@ -188,13 +200,14 @@ int BPF_KPROBE(kprobe_vfs_open, const struct path *path, struct file *file)
     struct file_event *e = bpf_ringbuf_reserve(&file_events, sizeof(*e), 0);
     if (!e)
         return 0;
- 
+
     if (fill_common(e, OP_OPEN)) {
         bpf_ringbuf_discard(e, 0);
         return 0;
     }
- 
-    resolve_name_from_path(path, e->filename, sizeof(e->filename));
+
+    struct dentry *dentry = BPF_CORE_READ(path, dentry);
+    collect_path_fragments(dentry, e);
     bpf_ringbuf_submit(e, 0);
     return 0;
 }
@@ -205,13 +218,14 @@ int BPF_KPROBE(kprobe_vfs_read, struct file *file, char *buf, size_t count, loff
     struct file_event *e = bpf_ringbuf_reserve(&file_events, sizeof(*e), 0);
     if (!e)
         return 0;
- 
+
     if (fill_common(e, OP_READ)) {
         bpf_ringbuf_discard(e, 0);
         return 0;
     }
- 
-    resolve_name_from_file(file, e->filename, sizeof(e->filename));
+
+    struct dentry *dentry = BPF_CORE_READ(file, f_path.dentry);
+    collect_path_fragments(dentry, e);
     bpf_ringbuf_submit(e, 0);
     return 0;
 }
@@ -222,13 +236,14 @@ int BPF_KPROBE(kprobe_vfs_write, struct file *file, const char *buf, size_t coun
     struct file_event *e = bpf_ringbuf_reserve(&file_events, sizeof(*e), 0);
     if (!e)
         return 0;
- 
+
     if (fill_common(e, OP_WRITE)) {
         bpf_ringbuf_discard(e, 0);
         return 0;
     }
- 
-    resolve_name_from_file(file, e->filename, sizeof(e->filename));
+
+    struct dentry *dentry = BPF_CORE_READ(file, f_path.dentry);
+    collect_path_fragments(dentry, e);
     bpf_ringbuf_submit(e, 0);
     return 0;
 }

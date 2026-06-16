@@ -29,7 +29,7 @@ func init() {
 			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
 			{Name: "op", Description: "Filter by operation: open, read, write (comma-separated)", HasValue: true},
-			{Name: "file", Description: "Filter by filename (substring match)", HasValue: true},
+			{Name: "file", Description: "Filter by path: /abs/path (exact), /dir/ (prefix), rel/path (suffix), name (substring)", HasValue: true},
 		},
 		Factory: func(flags map[string]string, sinkIface interface{}) (interface{}, error) {
 			sink, ok := sinkIface.(output.EventSink)
@@ -54,7 +54,7 @@ type FilterConfig struct {
 	PIDs         []uint32  /* -p flag: filter by PID (kernel-side) */
 	UIDs         []uint32  /* -u flag: filter by UID (kernel-side) */
 	CommName     string    /* -n flag: filter by process name (userspace) */
-	FileName     string    /* --file flag: filter by filename substring (userspace) */
+	FileName     string    /* --file flag: path-aware filter (userspace, see matchesFilter) */
 	Ops          []string  /* --op flag: filter by operation type (selective kprobe attachment) */
 	DenyPIDs     []uint32  /* --pid !<pid>: exclude PIDs */
 	DenyUIDs     []uint32  /* --uid !<uid>: exclude UIDs */
@@ -430,14 +430,51 @@ func (f *FilesModule) poll() {
 /*
 	matchesFilter applies userspace-level filters to a parsed event.
 	Returns true if the event should be forwarded to the Events channel.
+
+	The --file filter is path-aware. Since the BPF program now emits the
+	full absolute path, three matching modes are supported based on the
+	shape of the filter value:
+
+	  /etc/hosts   (leading slash, no trailing slash) -- exact path match,
+	               or prefix match if the path is a directory component
+	               (e.g. /etc/hosts/... for an unusual directory named hosts)
+	  /etc/        (leading slash, trailing slash)    -- directory prefix:
+	               matches any file under that directory tree
+	  etc/hosts    (contains slash, no leading slash) -- suffix match:
+	               matches any absolute path ending with /etc/hosts
+	  hosts        (no slash at all)                  -- substring match on
+	               the full absolute path
 */
 func (f *FilesModule) matchesFilter(e events.FileEvent) bool {
 	if f.filter.CommName != "" && !strings.Contains(e.ProcessName(), f.filter.CommName) {
 		return false
 	}
-	if f.filter.FileName != "" && !strings.Contains(e.FileName, f.filter.FileName) {
-		return false
+	if f.filter.FileName != "" {
+		filter := f.filter.FileName
+		switch {
+			case strings.HasPrefix(filter, "/"):
+				if strings.HasSuffix(filter, "/") {
+					/* Directory prefix: --file /etc/ matches /etc/hosts */
+					if !strings.HasPrefix(e.FileName, filter) {
+						return false
+					}
+				} else {
+					/* Exact match, or treat as directory (e.g. /etc/hosts/) */
+					if e.FileName != filter && !strings.HasPrefix(e.FileName, filter+"/") {
+						return false
+					}
+				}
+			case strings.Contains(filter, "/"):
+				/* Relative suffix: --file etc/hosts matches /etc/hosts */
+				if !strings.HasSuffix(e.FileName, "/"+filter) {
+					return false
+				}
+			default:
+				/* Name only: --file hosts matches /etc/hosts, /var/lib/hosts */
+				if !strings.Contains(e.FileName, filter) {
+					return false
+				}
+		}
 	}
-
 	return true
 }
