@@ -8,13 +8,14 @@ import (
 	"io"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 )
 
 /*
-	MapUpdater bridges control commands to BPF map operations.
+MapUpdater bridges control commands to BPF map operations.
 */
 type MapUpdater interface {
 	AddFilter(mapName string, key uint64) error
@@ -25,25 +26,25 @@ type MapUpdater interface {
 }
 
 /*
-	Handler processes control commands against a MapUpdater.
-	It is shared by both the interactive prompt and the socket server.
+Handler processes control commands against a MapUpdater.
+It is shared by both the interactive prompt and the socket server.
 */
 type Handler struct {
 	updater MapUpdater
 }
- 
+
 func NewHandler(updater MapUpdater) *Handler {
 	return &Handler{updater: updater}
 }
 
 /*
-	HandleCommand parses and executes a single command line, returning
-	the response string. Safe to call from any goroutine.
+HandleCommand parses and executes a single command line, returning
+the response string. Safe to call from any goroutine.
 
-	Map names can be plain ("pid") or module-qualified ("network.port"). Plain
-	names route through the MapUpdater's dispatch logic (e.g., compositeUpdater
-	routes by ownership). Module-qualified names are passed through as-is; the
-	MapUpdater implementation decides how to handle the prefix.
+Map names can be plain ("pid") or module-qualified ("network.port"). Plain
+names route through the MapUpdater's dispatch logic (e.g., compositeUpdater
+routes by ownership). Module-qualified names are passed through as-is; the
+MapUpdater implementation decides how to handle the prefix.
 */
 func (h *Handler) HandleCommand(line string) string {
 
@@ -51,62 +52,62 @@ func (h *Handler) HandleCommand(line string) string {
 	if len(parts) == 0 {
 		return ""
 	}
- 
+
 	switch strings.ToLower(parts[0]) {
-		case "help":
-			return helpText
-		case "status":
-			return h.updater.Status()
-		case "add":
-			if len(parts) == 3 {
-				return h.doAdd(parts[1], parts[2])
-			}
-			if len(parts) == 4 {
-				/*
-					4-part form: add <module> <map> <keys>
-					Combine module and map into "module.map" so the
-					compositeUpdater can dispatch by module name.
-				*/
-				qualifiedMap := parts[1] + "." + parts[2]
-				return h.doAdd(qualifiedMap, parts[3])
-			}
-			return "ERR usage: add [<module>] <map> <key>"
-		case "del":
-			if len(parts) == 3 {
-				return h.doDel(parts[1], parts[2])
-			}
-			if len(parts) == 4 {
-				qualifiedMap := parts[1] + "." + parts[2]
-				return h.doDel(qualifiedMap, parts[3])
-			}
-			return "ERR usage: del [<module>] <map> <key>"
-		case "list":
-			if len(parts) == 2 {
-				return h.doList(parts[1])
-			}
-			if len(parts) == 3 {
-				qualifiedMap := parts[1] + "." + parts[2]
-				return h.doList(qualifiedMap)
-			}
-			return "ERR usage: list [<module>] <map>"
-		case "clear":
-			if len(parts) == 2 {
-				return h.doClear(parts[1])
-			}
-			if len(parts) == 3 {
-				qualifiedMap := parts[1] + "." + parts[2]
-				return h.doClear(qualifiedMap)
-			}
-			return "ERR usage: clear [<module>] <map>"
-		case "resume", "quit", "exit":
+	case "help":
+		return helpText
+	case "status":
+		return h.updater.Status()
+	case "add":
+		if len(parts) == 3 {
+			return h.doAdd(parts[1], parts[2])
+		}
+		if len(parts) == 4 {
 			/*
-				These are handled by the caller (interactive or main loop),
-				not by the handler itself. Return them as-is so the caller
-				can detect them.
+				4-part form: add <module> <map> <keys>
+				Combine module and map into "module.map" so the
+				compositeUpdater can dispatch by module name.
 			*/
-			return "CMD:" + strings.ToLower(parts[0])
-		default:
-			return fmt.Sprintf("ERR unknown command: %s (try 'help')", parts[0])
+			qualifiedMap := parts[1] + "." + parts[2]
+			return h.doAdd(qualifiedMap, parts[3])
+		}
+		return "ERR usage: add [<module>] <map> <key>"
+	case "del":
+		if len(parts) == 3 {
+			return h.doDel(parts[1], parts[2])
+		}
+		if len(parts) == 4 {
+			qualifiedMap := parts[1] + "." + parts[2]
+			return h.doDel(qualifiedMap, parts[3])
+		}
+		return "ERR usage: del [<module>] <map> <key>"
+	case "list":
+		if len(parts) == 2 {
+			return h.doList(parts[1])
+		}
+		if len(parts) == 3 {
+			qualifiedMap := parts[1] + "." + parts[2]
+			return h.doList(qualifiedMap)
+		}
+		return "ERR usage: list [<module>] <map>"
+	case "clear":
+		if len(parts) == 2 {
+			return h.doClear(parts[1])
+		}
+		if len(parts) == 3 {
+			qualifiedMap := parts[1] + "." + parts[2]
+			return h.doClear(qualifiedMap)
+		}
+		return "ERR usage: clear [<module>] <map>"
+	case "resume", "quit", "exit":
+		/*
+			These are handled by the caller (interactive or main loop),
+			not by the handler itself. Return them as-is so the caller
+			can detect them.
+		*/
+		return "CMD:" + strings.ToLower(parts[0])
+	default:
+		return fmt.Sprintf("ERR unknown command: %s (try 'help')", parts[0])
 	}
 }
 
@@ -115,10 +116,47 @@ func (h *Handler) doAdd(mapName, keyStr string) string {
 	if err != nil {
 		return fmt.Sprintf("ERR invalid key %q: %v", keyStr, err)
 	}
+	warn := h.findExisting(mapName, key)
 	if err := h.updater.AddFilter(mapName, key); err != nil {
 		return fmt.Sprintf("ERR %v", err)
 	}
+	if warn != "" {
+		return "WARN " + warn
+	}
 	return "OK"
+}
+
+func (h *Handler) findExisting(mapName string, key uint64) string {
+	if dl, ok := h.updater.(DetailedLister); ok {
+		result, err := dl.ListFiltersDetailed(mapName)
+		if err != nil {
+			return ""
+		}
+		var found []string
+		for mod, keys := range result {
+			for _, k := range keys {
+				if k == key {
+					found = append(found, mod)
+					break
+				}
+			}
+		}
+		if len(found) > 0 {
+			sort.Strings(found)
+			return fmt.Sprintf("key %d already present in %s (%s)", key, mapName, strings.Join(found, ", "))
+		}
+		return ""
+	}
+	keys, err := h.updater.ListFilters(mapName)
+	if err != nil {
+		return ""
+	}
+	for _, k := range keys {
+		if k == key {
+			return fmt.Sprintf("key %d already present in %s", key, mapName)
+		}
+	}
+	return ""
 }
 
 func (h *Handler) doDel(mapName, keyStr string) string {
@@ -133,6 +171,9 @@ func (h *Handler) doDel(mapName, keyStr string) string {
 }
 
 func (h *Handler) doList(mapName string) string {
+	if dl, ok := h.updater.(DetailedLister); ok {
+		return h.doListDetailed(dl, mapName)
+	}
 	keys, err := h.updater.ListFilters(mapName)
 	if err != nil {
 		return fmt.Sprintf("ERR %v", err)
@@ -146,7 +187,53 @@ func (h *Handler) doList(mapName string) string {
 	}
 	return strings.Join(lines, "\n")
 }
- 
+
+/*
+	DetailedLister is an optional extension of MapUpdater. compositeUpdater
+	implements it so that list commands in multi-module mode show results
+	per module rather than only from the first matching module.
+*/
+type DetailedLister interface {
+	ListFiltersDetailed(mapName string) (map[string][]uint64, error)
+}
+
+func (h *Handler) doListDetailed(dl DetailedLister, mapName string) string {
+	result, err := dl.ListFiltersDetailed(mapName)
+	if err != nil {
+		return fmt.Sprintf("ERR %v", err)
+	}
+
+	modules := make([]string, 0, len(result))
+	for mod := range result {
+		modules = append(modules, mod)
+	}
+	sort.Strings(modules)
+
+	maxLen := 0
+	for _, mod := range modules {
+		if len(mod) > maxLen {
+			maxLen = len(mod)
+		}
+	}
+
+	lines := make([]string, 0, len(modules))
+	for _, mod := range modules {
+		keys := result[mod]
+		var keyStr string
+		if len(keys) == 0 {
+			keyStr = "(none)"
+		} else {
+			parts := make([]string, len(keys))
+			for i, k := range keys {
+				parts[i] = strconv.FormatUint(k, 10)
+			}
+			keyStr = "[" + strings.Join(parts, ", ") + "]"
+		}
+		lines = append(lines, fmt.Sprintf("%-*s  %s", maxLen+1, mod+":", keyStr))
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (h *Handler) doClear(mapName string) string {
 	if err := h.updater.ClearFilters(mapName); err != nil {
 		return fmt.Sprintf("ERR %v", err)
@@ -155,26 +242,26 @@ func (h *Handler) doClear(mapName string) string {
 }
 
 // --- Interactive mode (stdin/stdout) ---
- 
+
 /*
-	InteractiveResult indicates how the interactive session ended.
+InteractiveResult indicates how the interactive session ended.
 */
 type InteractiveResult int
- 
+
 const (
 	ResultResume InteractiveResult = iota // user typed "resume"
 	ResultQuit                            // user typed "quit"/"exit" or Ctrl+C/Ctrl+D
 )
- 
+
 /*
-	Interactive runs a blocking command loop on the given reader/writer
-	(typically os.Stdin/os.Stderr). It returns when the user types
-	"resume", "quit", "exit", or the reader reaches EOF.
+Interactive runs a blocking command loop on the given reader/writer
+(typically os.Stdin/os.Stderr). It returns when the user types
+"resume", "quit", "exit", or the reader reaches EOF.
 */
 func Interactive(h *Handler, r io.Reader, w io.Writer) InteractiveResult {
 	fmt.Fprintln(w, "\nVeil interactive control (type 'help' for commands, 'resume' to continue tracing, 'quit' to exit)")
 	fmt.Fprint(w, "veil $ ")
- 
+
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -182,23 +269,23 @@ func Interactive(h *Handler, r io.Reader, w io.Writer) InteractiveResult {
 			fmt.Fprint(w, "veil $ ")
 			continue
 		}
- 
+
 		resp := h.HandleCommand(line)
- 
+
 		switch resp {
-			case "CMD:resume":
-				return ResultResume
-			case "CMD:quit", "CMD:exit":
-				return ResultQuit
-			default:
-				if resp != "" {
-					fmt.Fprintln(w, resp)
-				}
+		case "CMD:resume":
+			return ResultResume
+		case "CMD:quit", "CMD:exit":
+			return ResultQuit
+		default:
+			if resp != "" {
+				fmt.Fprintln(w, resp)
+			}
 		}
- 
+
 		fmt.Fprint(w, "veil $ ")
 	}
- 
+
 	// EOF (CRTL-D), treat it as quit
 	return ResultQuit
 }
@@ -206,7 +293,7 @@ func Interactive(h *Handler, r io.Reader, w io.Writer) InteractiveResult {
 // --- Unix socket server ---
 
 /*
-	Server listens on a Unix domain socket and processes filter commands.
+Server listens on a Unix domain socket and processes filter commands.
 */
 type Server struct {
 	handler *Handler
@@ -217,7 +304,7 @@ type Server struct {
 }
 
 /*
-	NewServer creates a control server at the given socket path.
+NewServer creates a control server at the given socket path.
 */
 func NewServer(path string, handler *Handler) *Server {
 	return &Server{
@@ -246,7 +333,7 @@ func (s *Server) Start() error {
 }
 
 /*
-	Stop shuts down the server and removes the socket file.
+Stop shuts down the server and removes the socket file.
 */
 func (s *Server) Stop() error {
 	close(s.done)
@@ -259,7 +346,7 @@ func (s *Server) Stop() error {
 }
 
 /*
-	SocketPath returns the path to the Unix socket.
+SocketPath returns the path to the Unix socket.
 */
 func (s *Server) SocketPath() string {
 	return s.path
@@ -271,10 +358,10 @@ func (s *Server) acceptLoop() {
 		conn, err := s.ln.Accept()
 		if err != nil {
 			select {
-				case <-s.done:
-					return
-				default:
-					continue
+			case <-s.done:
+				return
+			default:
+				continue
 			}
 		}
 		s.handleConn(conn)
@@ -286,9 +373,9 @@ func (s *Server) handleConn(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		select {
-			case <-s.done:
-				return
-			default:
+		case <-s.done:
+			return
+		default:
 		}
 
 		line := strings.TrimSpace(scanner.Text())
@@ -314,7 +401,7 @@ const helpText = `Veil control commands:
   del <map> <key>             Remove a filter key
   del <module> <map> <key>    Remove from a specific module
   list <map>                  List all keys in a filter map
-  list <module> <map> <key>   List from a specific module
+  list <module> <map>         List from a specific module
   clear <map>                 Remove all keys from a filter map
   clear <module> <map>        Clear a specific module's map
   status                      Show active filters and module state

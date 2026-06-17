@@ -329,13 +329,15 @@ func main() {
 			break
 		}
 
-		/* Resume tracing */
-		dropped := pausable.Resume()
+		/* Resume tracing: print the banner before calling Resume so the
+		   marker always appears before events start flowing again. */
+		dropped := pausable.DroppedCount()
 		if dropped > 0 {
 			fmt.Fprintf(os.Stderr, "---  resumed (%d events dropped while paused)  ---\n", dropped)
 		} else {
 			fmt.Fprintf(os.Stderr, "---  resumed  ---\n")
 		}
+		pausable.Resume()
 
 		/*
 			Reset the signal listener for the next CTRL-C cycle. Drain any
@@ -554,6 +556,29 @@ func (c *compositeUpdater) ListFilters(mapName string) ([]uint64, error) {
 	}
 
 	return nil, fmt.Errorf("no loaded module owns map %q", mapName)
+}
+
+/*
+	ListFiltersDetailed implements control.DetailedLister. It collects filter
+	keys from every target module so the interactive list command can show
+	per-module results instead of only the first match.
+*/
+func (c *compositeUpdater) ListFiltersDetailed(mapName string) (map[string][]uint64, error) {
+	targets, realMap, err := c.resolveTargets(mapName)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]uint64, len(targets))
+	for _, name := range targets {
+		if u, exists := c.updaters[name]; exists {
+			keys, err := u.ListFilters(realMap)
+			if err != nil {
+				return nil, fmt.Errorf("module %s: %w", name, err)
+			}
+			result[name] = keys
+		}
+	}
+	return result, nil
 }
  
 func (c *compositeUpdater) ClearFilters(mapName string) error {

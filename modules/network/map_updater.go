@@ -29,6 +29,7 @@ package network
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/cilium/ebpf"
@@ -169,8 +170,8 @@ func (n *NetworkModule) Status() string {
 	uidDeny, _ := iterateKeys(n.updater.filters["uid_deny"].bpfMap, 4)
 	portDeny, _ := iterateKeys(n.updater.filters["port_deny"].bpfMap, 2)
 
-	return fmt.Sprintf("network: loaded, filters: pid=%v, uid=%v, port=%v, pid_deny=%v, uid_deny=%v, port_deny=%v",
-		pids, uids, ports, pidDeny, uidDeny, portDeny)
+	return fmt.Sprintf("network: loaded, filters: pid=%s, uid=%s, port=%s, pid_deny=%s, uid_deny=%s, port_deny=%s",
+		fmtKeys(pids), fmtKeys(uids), fmtKeys(ports), fmtKeys(pidDeny), fmtKeys(uidDeny), fmtKeys(portDeny))
 }
 
 // ---------------------------------------------------------------------------
@@ -304,4 +305,8 @@ func clearAll(m *ebpf.Map, keySize int) error {
 	}
 
 	return nil
+}
+
+func fmtKeys(keys []uint64) string {
+	return strings.ReplaceAll(fmt.Sprintf("%v", keys), " ", ",")
 }

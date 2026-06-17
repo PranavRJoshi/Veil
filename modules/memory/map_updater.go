@@ -17,6 +17,7 @@ package memory
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/cilium/ebpf"
@@ -156,8 +157,8 @@ func (m *MemoryModule) Status() string {
 	uidDeny, _ := iterateMapKeys(m.updater.filters["uid_deny"].bpfMap, 4)
 	faultDeny, _ := iterateMapKeys(m.updater.filters["fault_deny"].bpfMap, 4)
 
-	return fmt.Sprintf("memory: loaded, filters: pid=%v, uid=%v, fault=%v, pid_deny=%v, uid_deny=%v, fault_deny=%v",
-		pids, uids, faults, pidDeny, uidDeny, faultDeny)
+	return fmt.Sprintf("memory: loaded, filters: pid=%s, uid=%s, fault=%s, pid_deny=%s, uid_deny=%s, fault_deny=%s",
+		fmtKeys(pids), fmtKeys(uids), fmtKeys(faults), fmtKeys(pidDeny), fmtKeys(uidDeny), fmtKeys(faultDeny))
 }
 
 /*
@@ -286,4 +287,8 @@ func clearAllKeys(m *ebpf.Map, keySize int) error {
 		}
 	}
 	return nil
+}
+
+func fmtKeys(keys []uint64) string {
+	return strings.ReplaceAll(fmt.Sprintf("%v", keys), " ", ",")
 }

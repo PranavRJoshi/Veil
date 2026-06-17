@@ -30,6 +30,7 @@ package syscall
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/cilium/ebpf"
@@ -209,8 +210,8 @@ func (t *TracerModule) Status() string {
 	uidDeny, _ := iterateMapKeys(t.updater.filters["uid_deny"].bpfMap, 4)
 	syscallDeny, _ := iterateMapKeys(t.updater.filters["syscall_deny"].bpfMap, 8)
 
-	return fmt.Sprintf("syscall: loaded, filters: pid=%v, uid=%v, syscall=%v, pid_deny=%v, uid_deny=%v, syscall_deny=%v",
-	pids, uids, syscalls, pidDeny, uidDeny, syscallDeny)
+	return fmt.Sprintf("syscall: loaded, filters: pid=%s, uid=%s, syscall=%s, pid_deny=%s, uid_deny=%s, syscall_deny=%s",
+		fmtKeys(pids), fmtKeys(uids), fmtKeys(syscalls), fmtKeys(pidDeny), fmtKeys(uidDeny), fmtKeys(syscallDeny))
 }
 
 // --------------------------------------------------------
@@ -380,4 +381,8 @@ func clearAllKeys(m *ebpf.Map, keySize int) error {
 	}
 
 	return nil
+}
+
+func fmtKeys(keys []uint64) string {
+	return strings.ReplaceAll(fmt.Sprintf("%v", keys), " ", ",")
 }

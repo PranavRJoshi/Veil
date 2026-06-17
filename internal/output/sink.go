@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 )
 
 // EventSink receives structured events from modules. Implementations
@@ -140,8 +141,16 @@ func (s *FilterSink) Close() error {
 // While paused, Emit calls are silently dropped and counted. This
 // enables the interactive control mode where event output is suspended
 // while the user modifies filters.
+//
+// mu is a RWMutex: Emit holds a read lock across the entire call
+// (including next.Emit), while Pause and Resume hold the write lock.
+// This guarantees that when Pause returns, every in-progress Emit has
+// completed and no further events will reach next.Emit.
+//
+// dropped is accessed with sync/atomic so concurrent read-lock holders
+// can increment it without serialising through the write lock.
 type PausableSink struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	next    EventSink
 	paused  bool
 	dropped uint64
@@ -150,36 +159,42 @@ type PausableSink struct {
 func NewPausableSink(next EventSink) *PausableSink {
 	return &PausableSink{next: next}
 }
- 
+
 func (s *PausableSink) Emit(module string, fields map[string]interface{}) error {
-	s.mu.Lock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.paused {
-		s.dropped++
-		s.mu.Unlock()
+		atomic.AddUint64(&s.dropped, 1)
 		return nil
 	}
-	s.mu.Unlock()
 	return s.next.Emit(module, fields)
 }
 
 func (s *PausableSink) Close() error { return s.next.Close() }
- 
-// Pause stops forwarding events. Subsequent Emit calls are counted
-// as dropped.
+
+// Pause stops forwarding events. It blocks until every Emit call that
+// started before Pause was called has fully completed, so no event can
+// appear on the output stream after Pause returns.
 func (s *PausableSink) Pause() {
 	s.mu.Lock()
 	s.paused = true
-	s.dropped = 0
+	atomic.StoreUint64(&s.dropped, 0)
 	s.mu.Unlock()
 }
 
+// DroppedCount returns the number of events dropped since the last Pause
+// without modifying the paused state. Read the count before Resume so the
+// banner can be printed before events start flowing again.
+func (s *PausableSink) DroppedCount() uint64 {
+	return atomic.LoadUint64(&s.dropped)
+}
 
 // Resume resumes forwarding and returns the number of events dropped
 // while paused.
 func (s *PausableSink) Resume() uint64 {
 	s.mu.Lock()
-	d := s.dropped
-	s.dropped = 0
+	d := atomic.LoadUint64(&s.dropped)
+	atomic.StoreUint64(&s.dropped, 0)
 	s.paused = false
 	s.mu.Unlock()
 	return d

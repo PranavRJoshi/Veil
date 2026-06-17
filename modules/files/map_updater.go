@@ -22,6 +22,7 @@ package files
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/cilium/ebpf"
@@ -148,8 +149,8 @@ func (f *FilesModule) Status() string {
 	pidDeny, _ := iterateMap32(f.updater.filters["pid_deny"].bpfMap)
 	uidDeny, _ := iterateMap32(f.updater.filters["uid_deny"].bpfMap)
 
-	return fmt.Sprintf("files: loaded, filters: pid=%v, uid=%v, pid_deny=%v, uid_deny=%v",
-	pids, uids, pidDeny, uidDeny)
+	return fmt.Sprintf("files: loaded, filters: pid=%s, uid=%s, pid_deny=%s, uid_deny=%s",
+		fmtKeys(pids), fmtKeys(uids), fmtKeys(pidDeny), fmtKeys(uidDeny))
 }
 
 // ---------------------------------------------------------------------------
@@ -231,4 +232,8 @@ func clearMap32(m *ebpf.Map) error {
 	}
 
 	return nil
+}
+
+func fmtKeys(keys []uint64) string {
+	return strings.ReplaceAll(fmt.Sprintf("%v", keys), " ", ",")
 }

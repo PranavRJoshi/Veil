@@ -17,6 +17,7 @@ package scheduler
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/cilium/ebpf"
@@ -156,8 +157,8 @@ func (t *SchedulerModule) Status() string {
 	uidDeny, _ := iterateMapKeys(t.updater.filters["uid_deny"].bpfMap, 4)
 	cpuDeny, _ := iterateMapKeys(t.updater.filters["cpu_deny"].bpfMap, 4)
 
-	return fmt.Sprintf("scheduler: loaded, filters: pid=%v, uid=%v, cpu=%v, pid_deny=%v, uid_deny=%v, cpu_deny=%v",
-		pids, uids, cpus, pidDeny, uidDeny, cpuDeny)
+	return fmt.Sprintf("scheduler: loaded, filters: pid=%s, uid=%s, cpu=%s, pid_deny=%s, uid_deny=%s, cpu_deny=%s",
+		fmtKeys(pids), fmtKeys(uids), fmtKeys(cpus), fmtKeys(pidDeny), fmtKeys(uidDeny), fmtKeys(cpuDeny))
 }
 
 // --------------------------------------------------------
@@ -286,4 +287,8 @@ func clearAllKeys(m *ebpf.Map, keySize int) error {
 		}
 	}
 	return nil
+}
+
+func fmtKeys(keys []uint64) string {
+	return strings.ReplaceAll(fmt.Sprintf("%v", keys), " ", ",")
 }
