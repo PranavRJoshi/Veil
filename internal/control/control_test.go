@@ -398,6 +398,26 @@ func TestServer_ListEmpty(t *testing.T) {
 // Handler direct tests
 // ---------------------------------------------------------------------------
  
+func TestHandler_AddDuplicateWarn(t *testing.T) {
+	h := NewHandler(newFakeUpdater())
+
+	if resp := h.HandleCommand("add pid 42"); resp != "OK" {
+		t.Fatalf("first add: got %q, want OK", resp)
+	}
+
+	// Adding the same key again must produce a WARN, not OK or ERR
+	resp := h.HandleCommand("add pid 42")
+	if !strings.HasPrefix(resp, "WARN") {
+		t.Errorf("duplicate add: got %q, want WARN prefix", resp)
+	}
+	if !strings.Contains(resp, "42") {
+		t.Errorf("warning should mention key 42: %q", resp)
+	}
+	if !strings.Contains(resp, "pid") {
+		t.Errorf("warning should mention map name: %q", resp)
+	}
+}
+
 func TestHandler_AddAndList(t *testing.T) {
 	updater := newFakeUpdater()
 	h := NewHandler(updater)
@@ -446,7 +466,7 @@ func TestInteractive_Resume(t *testing.T) {
 	input := strings.NewReader("add pid 100\nresume\n")
 	var out strings.Builder
  
-	result := Interactive(h, input, &out)
+	result := interactiveScanner(h, input, &out)
 	if result != ResultResume {
 		t.Errorf("expected ResultResume, got %d", result)
 	}
@@ -457,7 +477,7 @@ func TestInteractive_Quit(t *testing.T) {
 	input := strings.NewReader("quit\n")
 	var out strings.Builder
  
-	result := Interactive(h, input, &out)
+	result := interactiveScanner(h, input, &out)
 	if result != ResultQuit {
 		t.Errorf("expected ResultQuit, got %d", result)
 	}
@@ -468,7 +488,7 @@ func TestInteractive_EOF(t *testing.T) {
 	input := strings.NewReader("") // EOF immediately
 	var out strings.Builder
  
-	result := Interactive(h, input, &out)
+	result := interactiveScanner(h, input, &out)
 	if result != ResultQuit {
 		t.Errorf("expected ResultQuit on EOF, got %d", result)
 	}
@@ -479,7 +499,7 @@ func TestInteractive_CommandOutput(t *testing.T) {
 	input := strings.NewReader("add pid 42\nstatus\nquit\n")
 	var out strings.Builder
  
-	Interactive(h, input, &out)
+	interactiveScanner(h, input, &out)
  
 	output := out.String()
 	if !strings.Contains(output, "OK") {
@@ -593,7 +613,7 @@ func TestInteractive_Exit(t *testing.T) {
 	input := strings.NewReader("exit\n")
 	var out strings.Builder
  
-	result := Interactive(h, input, &out)
+	result := interactiveScanner(h, input, &out)
 	if result != ResultQuit {
 		t.Errorf("expected ResultQuit for 'exit', got %d", result)
 	}
@@ -604,7 +624,7 @@ func TestInteractive_EmptyLines(t *testing.T) {
 	input := strings.NewReader("\n\n\nquit\n")
 	var out strings.Builder
  
-	result := Interactive(h, input, &out)
+	result := interactiveScanner(h, input, &out)
 	if result != ResultQuit {
 		t.Errorf("expected ResultQuit, got %d", result)
 	}

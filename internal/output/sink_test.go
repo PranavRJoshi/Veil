@@ -187,6 +187,43 @@ func TestPausableSink_ResumeResetsCounter(t *testing.T) {
 	}
 }
 
+func TestPausableSink_DroppedCountDoesNotReset(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewPausableSink(NewTextSink(&buf, nil))
+
+	p.Pause()
+	_ = p.Emit("a", sampleFields())
+	_ = p.Emit("b", sampleFields())
+
+	// Calling DroppedCount twice must not change the value (non-destructive read)
+	c1 := p.DroppedCount()
+	c2 := p.DroppedCount()
+	if c1 != 2 || c2 != 2 {
+		t.Errorf("DroppedCount: expected 2 on both calls, got %d then %d", c1, c2)
+	}
+
+	// Resume must return the same count that DroppedCount reported
+	if d := p.Resume(); d != 2 {
+		t.Errorf("Resume: expected 2 matching DroppedCount, got %d", d)
+	}
+}
+
+func TestPausableSink_DroppedCountResetsOnPause(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewPausableSink(NewTextSink(&buf, nil))
+
+	p.Pause()
+	_ = p.Emit("a", sampleFields())
+	p.Resume()
+
+	// A new Pause resets the counter to zero
+	p.Pause()
+	if c := p.DroppedCount(); c != 0 {
+		t.Errorf("DroppedCount after fresh Pause: expected 0, got %d", c)
+	}
+	p.Resume()
+}
+
 func TestPausableSink_ConcurrentPauseResume(t *testing.T) {
 	var buf bytes.Buffer
 	inner := NewTextSink(&buf, nil)

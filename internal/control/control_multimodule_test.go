@@ -2,6 +2,7 @@ package control
 
 import (
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -239,7 +240,7 @@ func TestInteractive_DenyMapRoundTrip(t *testing.T) {
 	input := strings.NewReader("add pid_deny 42\nlist pid_deny\nquit\n")
 	var out strings.Builder
 
-	Interactive(h, input, &out)
+	interactiveScanner(h, input, &out)
 
 	output := out.String()
 	if !strings.Contains(output, "OK") {
@@ -256,7 +257,7 @@ func TestInteractive_FourPartRoundTrip(t *testing.T) {
 	input := strings.NewReader("add network port 8080\nlist network port\nresume\n")
 	var out strings.Builder
 
-	result := Interactive(h, input, &out)
+	result := interactiveScanner(h, input, &out)
 	if result != ResultResume {
 		t.Errorf("expected ResultResume, got %d", result)
 	}
@@ -267,6 +268,187 @@ func TestInteractive_FourPartRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(output, "8080") {
 		t.Errorf("output should contain listed key 8080: %q", output)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// detailedFakeUpdater: implements MapUpdater + DetailedLister
+//
+// Simulates a compositeUpdater with N named modules each owning a set of
+// named maps. AddFilter broadcasts to all modules; ListFiltersDetailed
+// returns per-module slices so doListDetailed output can be verified.
+// seedModule injects keys directly into one module for mixed-state tests.
+// ---------------------------------------------------------------------------
+
+type detailedFakeUpdater struct {
+	mu      sync.Mutex
+	modules []string
+	data    map[string]map[string]map[uint64]bool // module -> mapName -> key
+}
+
+func newDetailedFake(modules ...string) *detailedFakeUpdater {
+	data := make(map[string]map[string]map[uint64]bool)
+	for _, mod := range modules {
+		data[mod] = map[string]map[uint64]bool{
+			"pid": {},
+			"uid": {},
+		}
+	}
+	return &detailedFakeUpdater{modules: modules, data: data}
+}
+
+func (u *detailedFakeUpdater) seedModule(mod, mapName string, keys ...uint64) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for _, k := range keys {
+		u.data[mod][mapName][k] = true
+	}
+}
+
+func (u *detailedFakeUpdater) AddFilter(mapName string, key uint64) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	found := false
+	for _, mod := range u.modules {
+		if m, ok := u.data[mod][mapName]; ok {
+			m[key] = true
+			found = true
+		}
+	}
+	if !found {
+		return nil // unknown map names are silently ignored like compositeUpdater
+	}
+	return nil
+}
+
+func (u *detailedFakeUpdater) DelFilter(mapName string, key uint64) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for _, mod := range u.modules {
+		if m, ok := u.data[mod][mapName]; ok {
+			delete(m, key)
+		}
+	}
+	return nil
+}
+
+func (u *detailedFakeUpdater) ListFilters(mapName string) ([]uint64, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	seen := make(map[uint64]bool)
+	for _, mod := range u.modules {
+		if m, ok := u.data[mod][mapName]; ok {
+			for k := range m {
+				seen[k] = true
+			}
+		}
+	}
+	keys := make([]uint64, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
+func (u *detailedFakeUpdater) ClearFilters(mapName string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for _, mod := range u.modules {
+		if m, ok := u.data[mod][mapName]; ok {
+			for k := range m {
+				delete(m, k)
+			}
+		}
+	}
+	return nil
+}
+
+func (u *detailedFakeUpdater) Status() string { return "detailed-test: ok" }
+
+func (u *detailedFakeUpdater) ListFiltersDetailed(mapName string) (map[string][]uint64, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	result := make(map[string][]uint64, len(u.modules))
+	for _, mod := range u.modules {
+		keyMap, ok := u.data[mod][mapName]
+		if !ok {
+			result[mod] = nil
+			continue
+		}
+		keys := make([]uint64, 0, len(keyMap))
+		for k := range keyMap {
+			keys = append(keys, k)
+		}
+		result[mod] = keys
+	}
+	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// DetailedLister: per-module list output
+// ---------------------------------------------------------------------------
+
+func TestHandler_ListDetailed_AllEmpty(t *testing.T) {
+	h := NewHandler(newDetailedFake("files", "network"))
+
+	resp := h.HandleCommand("list pid")
+	if !strings.Contains(resp, "files:") {
+		t.Errorf("expected files: in output, got %q", resp)
+	}
+	if !strings.Contains(resp, "network:") {
+		t.Errorf("expected network: in output, got %q", resp)
+	}
+	if !strings.Contains(resp, "(none)") {
+		t.Errorf("expected (none) for empty modules, got %q", resp)
+	}
+}
+
+func TestHandler_ListDetailed_AllPopulated(t *testing.T) {
+	h := NewHandler(newDetailedFake("files", "network"))
+
+	h.HandleCommand("add pid 100")
+	resp := h.HandleCommand("list pid")
+
+	if !strings.Contains(resp, "[100]") {
+		t.Errorf("expected [100] in output, got %q", resp)
+	}
+	if strings.Contains(resp, "(none)") {
+		t.Errorf("unexpected (none) when all modules have key: %q", resp)
+	}
+}
+
+func TestHandler_ListDetailed_Mixed(t *testing.T) {
+	u := newDetailedFake("files", "network")
+	u.seedModule("files", "pid", 42)
+	h := NewHandler(u)
+
+	resp := h.HandleCommand("list pid")
+	if !strings.Contains(resp, "[42]") {
+		t.Errorf("expected [42] for files, got %q", resp)
+	}
+	if !strings.Contains(resp, "(none)") {
+		t.Errorf("expected (none) for network, got %q", resp)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DetailedLister: duplicate-key warning names the owning modules
+// ---------------------------------------------------------------------------
+
+func TestHandler_AddDuplicate_DetailedLister(t *testing.T) {
+	h := NewHandler(newDetailedFake("files", "network"))
+
+	h.HandleCommand("add pid 99")
+	resp := h.HandleCommand("add pid 99")
+
+	if !strings.HasPrefix(resp, "WARN") {
+		t.Errorf("duplicate add: got %q, want WARN prefix", resp)
+	}
+	if !strings.Contains(resp, "99") {
+		t.Errorf("warning should mention key 99: %q", resp)
+	}
+	if !strings.Contains(resp, "files") || !strings.Contains(resp, "network") {
+		t.Errorf("warning should name both modules: %q", resp)
 	}
 }
 
