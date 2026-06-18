@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/chzyer/readline"
 )
 
 /*
@@ -244,6 +246,23 @@ func (h *Handler) doClear(mapName string) string {
 // --- Interactive mode (stdin/stdout) ---
 
 /*
+bellingCompleter wraps an AutoCompleter and writes BEL (\a) to w when Tab
+finds no completions, giving audible feedback for unrecognised input.
+*/
+type bellingCompleter struct {
+	inner readline.AutoCompleter
+	w     io.Writer
+}
+
+func (b *bellingCompleter) Do(line []rune, pos int) ([][]rune, int) {
+	newLine, length := b.inner.Do(line, pos)
+	if len(newLine) == 0 {
+		fmt.Fprint(b.w, "\a")
+	}
+	return newLine, length
+}
+
+/*
 InteractiveResult indicates how the interactive session ended.
 */
 type InteractiveResult int
@@ -254,24 +273,84 @@ const (
 )
 
 /*
-Interactive runs a blocking command loop on the given reader/writer
-(typically os.Stdin/os.Stderr). It returns when the user types
-"resume", "quit", "exit", or the reader reaches EOF.
-*/
-func Interactive(h *Handler, r io.Reader, w io.Writer) InteractiveResult {
-	fmt.Fprintln(w, "\nVeil interactive control (type 'help' for commands, 'resume' to continue tracing, 'quit' to exit)")
-	fmt.Fprint(w, "veil $ ")
+Interactive runs a readline-backed command loop writing responses to w.
+It returns when the user types "resume", "quit", "exit", CTRL-C, CTRL-D,
+or cancel is closed (used by the caller to unblock on external signals).
 
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+In raw terminal mode readline intercepts CTRL-C itself (returning
+ErrInterrupt) so SIGINT does not reach the process signal channel while
+this function is running.
+*/
+func Interactive(h *Handler, w io.Writer, cancel <-chan struct{}) InteractiveResult {
+	fmt.Fprintln(w, "\nVeil interactive control (type 'help' for commands, 'resume' to continue tracing, 'quit' to exit)")
+
+	mapItems := []readline.PrefixCompleterInterface{
+		readline.PcItem("pid"),
+		readline.PcItem("uid"),
+		readline.PcItem("port"),
+		readline.PcItem("syscall"),
+		readline.PcItem("pid_deny"),
+		readline.PcItem("uid_deny"),
+		readline.PcItem("port_deny"),
+		readline.PcItem("cpu"),
+		readline.PcItem("cpu_deny"),
+		readline.PcItem("fault"),
+		readline.PcItem("fault_deny"),
+	}
+
+	completer := readline.NewPrefixCompleter(
+		readline.PcItem("add",   mapItems...),
+		readline.PcItem("del",   mapItems...),
+		readline.PcItem("list",  mapItems...),
+		readline.PcItem("clear", mapItems...),
+		readline.PcItem("status"),
+		readline.PcItem("resume"),
+		readline.PcItem("quit"),
+		readline.PcItem("exit"),
+		readline.PcItem("help"),
+	)
+
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          "veil $ ",
+		AutoComplete:    &bellingCompleter{inner: completer, w: w},
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+		Stdout:          w,
+	})
+	if err != nil {
+		/* readline unavailable (non-terminal or init error); use plain scanner */
+		return interactiveScanner(h, os.Stdin, w)
+	}
+
+	var once sync.Once
+	closeRL := func() { once.Do(func() { rl.Close() }) }
+	defer closeRL()
+
+	innerDone := make(chan struct{})
+	defer close(innerDone)
+	go func() {
+		select {
+		case <-cancel:
+			closeRL()
+		case <-innerDone:
+		}
+	}()
+
+	for {
+		line, err := rl.Readline()
+		if err == readline.ErrInterrupt || err == io.EOF {
+			return ResultQuit
+		}
+		if err != nil {
+			return ResultQuit
+		}
+
+		line = strings.TrimSpace(line)
 		if line == "" {
-			fmt.Fprint(w, "veil $ ")
 			continue
 		}
 
 		resp := h.HandleCommand(line)
-
 		switch resp {
 		case "CMD:resume":
 			return ResultResume
@@ -282,11 +361,35 @@ func Interactive(h *Handler, r io.Reader, w io.Writer) InteractiveResult {
 				fmt.Fprintln(w, resp)
 			}
 		}
+	}
+}
 
+/*
+interactiveScanner is the plain bufio.Scanner fallback used when readline
+cannot initialise (e.g. stdout is not a terminal).
+*/
+func interactiveScanner(h *Handler, r io.Reader, w io.Writer) InteractiveResult {
+	fmt.Fprint(w, "veil $ ")
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			fmt.Fprint(w, "veil $ ")
+			continue
+		}
+		resp := h.HandleCommand(line)
+		switch resp {
+		case "CMD:resume":
+			return ResultResume
+		case "CMD:quit", "CMD:exit":
+			return ResultQuit
+		default:
+			if resp != "" {
+				fmt.Fprintln(w, resp)
+			}
+		}
 		fmt.Fprint(w, "veil $ ")
 	}
-
-	// EOF (CRTL-D), treat it as quit
 	return ResultQuit
 }
 

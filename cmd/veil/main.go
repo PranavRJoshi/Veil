@@ -275,54 +275,29 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\n---  Veil Tracing Paused [%s]  ---\n", moduleLabel)
 
 		/*
-			In interactive mode, a second CTRL-C should quit rather than
-			be swallowed. We run interactive on stdin; if the user sends
-			CTRL-C during the prompt, the signal handler fires and we
-			check a flag.
+			readline intercepts CTRL-C in raw mode (returns ErrInterrupt) so
+			SIGINT does not reach sigCh during the prompt. cancelInteractive is
+			only closed on an external signal (SIGTERM / kill -INT); Interactive
+			watches it and calls rl.Close() to unblock Readline(). Because no
+			goroutine blocks on sigCh between the inner select and the next
+			outer-loop iteration, the previous signal-consuming race cannot
+			occur here.
 		*/
-		interruptedDuringPrompt := make(chan struct{}, 1)
-		/*
-			stopMonitor exists to remedy the problem observed during program
-			runtime. Without this, the following case could be noticed: after
-			entering interactive mode and using the "resume" command, the
-			program would consume the subsequent interrupt signal instead of
-			entering the interactive mode. Once resultCh receives the data and
-			assigns that value to result, stopMonitor is closed, which
-			signals the goroutine below to return--terminate the gorotuine.
-			If stopMonitor was not defined and not closed below, a race
-			condition could occur where the goroutine below and the assignment
-			to sig above could be waiting for the same channel to have some
-			data.
-		*/
-		stopMonitor := make(chan struct{})
-		go func() {
-			select {
-				case <-sigCh:
-					interruptedDuringPrompt <- struct{}{}
-					/* Write a newline so the prompt doesn't hang */
-					fmt.Fprintln(os.Stderr)
-				case <-stopMonitor:
-					return
-			}
-		}()
-
-		/*
-			Run the interactive prompt. It blocks until the user types
-			"resume", "quit", "exit", or CTRL-D
-		*/
+		cancelInteractive := make(chan struct{})
 		resultCh := make(chan control.InteractiveResult, 1)
 		go func() {
-			resultCh <- control.Interactive(handler, os.Stdin, os.Stderr)
+			resultCh <- control.Interactive(handler, os.Stderr, cancelInteractive)
 		}()
 
 		var result control.InteractiveResult
 		select {
-			case result = <-resultCh:
-				/* User typed a command */
-				close(stopMonitor)
-			case <-interruptedDuringPrompt:
-				/* Second CTRL-C while in prompt */
-				result = control.ResultQuit
+		case result = <-resultCh:
+			/* readline returned normally (resume / quit / CTRL-C / CTRL-D) */
+		case <-sigCh:
+			/* external signal during interactive mode */
+			close(cancelInteractive)
+			<-resultCh /* wait for readline to restore the terminal */
+			result = control.ResultQuit
 		}
 
 		if result == control.ResultQuit {
@@ -469,13 +444,21 @@ func (c *compositeUpdater) resolveTargets(mapName string) (targets []string, rea
 		return []string{modName}, realMap, nil
 	}
 
-	/* Plain map name: route via ownership */
+	/* Plain map name: route via ownership, restricted to loaded modules */
 	owners, ok := mapOwnership[mapName]
 	if !ok {
 		return nil, "", fmt.Errorf("unknown filter map %q (use help)", mapName)
 	}
-
-	return owners, mapName, nil
+	loaded := make([]string, 0, len(owners))
+	for _, mod := range owners {
+		if _, exists := c.updaters[mod]; exists {
+			loaded = append(loaded, mod)
+		}
+	}
+	if len(loaded) == 0 {
+		return nil, "", fmt.Errorf("no loaded module owns map %q (loaded: %s)", mapName, strings.Join(c.loadedNames(), ", "))
+	}
+	return loaded, mapName, nil
 }
 
 func (c *compositeUpdater) loadedNames() []string {
