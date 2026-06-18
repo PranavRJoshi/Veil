@@ -31,14 +31,14 @@ func TestJoin(t *testing.T) {
 			wantMsg: "error one",
 		},
 		{
-			name:    "multiple errors joined with semicolon",
+			name:    "multiple errors joined with newline",
 			input:   []error{sentinel1, sentinel2},
-			wantMsg: "error one; error two",
+			wantMsg: "error one\nerror two",
 		},
 		{
 			name:    "nil errors are skipped",
 			input:   []error{sentinel1, nil, sentinel2},
-			wantMsg: "error one; error two",
+			wantMsg: "error one\nerror two",
 		},
 	}
 

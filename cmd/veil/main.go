@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/control"
 	"github.com/PranavRJoshi/Veil/internal/count"
 	"github.com/PranavRJoshi/Veil/internal/enrich"
+	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
@@ -475,16 +477,16 @@ func (c *compositeUpdater) AddFilter(mapName string, key uint64) error {
 	if err != nil {
 		return err
 	}
-	var lastErr error
+	var errs []error
 	for _, name := range targets {
 		if u, exists := c.updaters[name]; exists {
 			if err := u.AddFilter(realMap, key); err != nil {
-				lastErr = err
+				errs = append(errs, err)
 			}
 		}
 	}
 
-	return lastErr
+	return exterrs.Join(errs)
 }
 
 func (c *compositeUpdater) DelFilter(mapName string, key uint64) error {
@@ -494,32 +496,20 @@ func (c *compositeUpdater) DelFilter(mapName string, key uint64) error {
 	}
 
 	/*
-		For shared maps, the key may exist in some modules but not others.
-		A delete is successful if at least one module had the key. We can
-		either:
-
-			1. Assume that upon one successful deletion, simply return OK
-			   and user check for themselves the map.
-			2. Report the successful deletion as well as return failure
-			   when other module's fails.
-
-		The second option is chosen for now. For the first option, we need
-		to make a variable to track the number of successful deletion
-		and if its greater than one, simply return OK, else return an
-		error.
+		For shared maps, a key may exist in some modules but not others
+		(e.g. added via a module-qualified name). Collect all per-module
+		errors so the caller sees every failure, not just the last one.
 	*/
-	var delErr error
+	var errs []error
 	for _, name := range targets {
 		if u, exists := c.updaters[name]; exists {
 			if err := u.DelFilter(realMap, key); err != nil {
-				delErr = err
-			} else {
-				fmt.Printf("Deleted key %v for map %s (%v module)\n", key, mapName, name)
+				errs = append(errs, err)
 			}
 		}
 	}
 
-	return delErr
+	return exterrs.Join(errs)
 }
 
 func (c *compositeUpdater) ListFilters(mapName string) ([]uint64, error) {
@@ -570,22 +560,28 @@ func (c *compositeUpdater) ClearFilters(mapName string) error {
 		return err
 	}
 
-	var firstErr error
+	var errs []error
 	for _, name := range targets {
 		if u, exists := c.updaters[name]; exists {
 			if err := u.ClearFilters(realMap); err != nil {
-				firstErr = err
+				errs = append(errs, err)
 			}
 		}
 	}
 
-	return firstErr
+	return exterrs.Join(errs)
 }
 
 func (c *compositeUpdater) Status() string {
-	var parts []string
-	for _, u := range c.updaters {
-		parts = append(parts, u.Status())
+	names := make([]string, 0, len(c.updaters))
+	for name := range c.updaters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, c.updaters[name].Status())
 	}
 
 	return strings.Join(parts, "\n")

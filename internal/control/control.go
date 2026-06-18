@@ -113,6 +113,18 @@ func (h *Handler) HandleCommand(line string) string {
 	}
 }
 
+// fmtErr formats an error as a control response. Multi-line errors
+// (from compositeUpdater collecting per-module failures) are printed
+// with "ERR" alone on the first line so each module's message is on
+// its own line. Single-line errors use the compact "ERR <msg>" form.
+func fmtErr(err error) string {
+	msg := err.Error()
+	if strings.Contains(msg, "\n") {
+		return "ERR\n" + msg
+	}
+	return "ERR " + msg
+}
+
 func (h *Handler) doAdd(mapName, keyStr string) string {
 	key, err := strconv.ParseUint(keyStr, 10, 64)
 	if err != nil {
@@ -120,7 +132,7 @@ func (h *Handler) doAdd(mapName, keyStr string) string {
 	}
 	warn := h.findExisting(mapName, key)
 	if err := h.updater.AddFilter(mapName, key); err != nil {
-		return fmt.Sprintf("ERR %v", err)
+		return fmtErr(err)
 	}
 	if warn != "" {
 		return "WARN " + warn
@@ -167,7 +179,7 @@ func (h *Handler) doDel(mapName, keyStr string) string {
 		return fmt.Sprintf("ERR invalid key %q: %v", keyStr, err)
 	}
 	if err := h.updater.DelFilter(mapName, key); err != nil {
-		return fmt.Sprintf("ERR %v", err)
+		return fmtErr(err)
 	}
 	return "OK"
 }
@@ -238,7 +250,7 @@ func (h *Handler) doListDetailed(dl DetailedLister, mapName string) string {
 
 func (h *Handler) doClear(mapName string) string {
 	if err := h.updater.ClearFilters(mapName); err != nil {
-		return fmt.Sprintf("ERR %v", err)
+		return fmtErr(err)
 	}
 	return "OK"
 }

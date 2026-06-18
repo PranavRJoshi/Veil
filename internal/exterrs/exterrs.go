@@ -19,7 +19,7 @@ func Join(errs []error) error {
 	msg := ""
 	for i, e := range nonNil {
 		if i > 0 {
-			msg += "; "
+			msg += "\n"
 		}
 		msg += e.Error()
 	}

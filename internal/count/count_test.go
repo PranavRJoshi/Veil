@@ -315,7 +315,7 @@ func TestCountSink_MissingKeyField(t *testing.T) {
 	var buf bytes.Buffer
 	cs := NewCountSink(&buf, 10)
 
-	/* Event with no "syscall" field — should fall back to "comm" */
+	/* Event with no "syscall" field -- should fall back to "comm" */
 	cs.Emit("syscall", map[string]interface{}{
 		"pid":  uint32(1),
 		"comm": "mystery",

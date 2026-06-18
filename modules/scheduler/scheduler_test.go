@@ -339,7 +339,7 @@ func TestSchedulerToFields_CommFieldCompatibility(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSplitAllowDeny_Integration(t *testing.T) {
-	/* Simulate what the CLI does: --cpu 0,!7 → cpu=0, cpu_deny=7 */
+	/* Simulate what the CLI does: --cpu 0,!7 -> cpu=0, cpu_deny=7 */
 	cfg, err := ParseFilterConfig(map[string]string{
 		"cpu":      "0",
 		"cpu_deny": "7",
