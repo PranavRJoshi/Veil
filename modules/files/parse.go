@@ -40,14 +40,14 @@ type fileEvent struct {
 */
 func opName(op uint8) string {
 	switch op {
-		case 0:
-			return "open"
-		case 1:
-			return "read"
-		case 2:
-			return "write"
-		default:
-			return fmt.Sprintf("op_%d", op)
+	case 0:
+		return "open"
+	case 1:
+		return "read"
+	case 2:
+		return "write"
+	default:
+		return fmt.Sprintf("op_%d", op)
 	}
 }
 

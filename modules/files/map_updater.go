@@ -159,7 +159,7 @@ func (f *FilesModule) Status() string {
 
 func (s *mapUpdaterState) setBit(bit uint32) error {
 	mask, _ := s.readCfg()
-	if mask & bit != 0 {
+	if mask&bit != 0 {
 		return nil
 	}
 	mask |= bit
@@ -169,7 +169,7 @@ func (s *mapUpdaterState) setBit(bit uint32) error {
 
 func (s *mapUpdaterState) clearBit(bit uint32) error {
 	mask, _ := s.readCfg()
-	if mask & bit == 0 {
+	if mask&bit == 0 {
 		return nil
 	}
 	mask &^= bit

@@ -491,7 +491,7 @@ func TestKeyFieldFor_Override(t *testing.T) {
 // ---------------------------------------------------------------------------
 // ValidateKeyField
 // ---------------------------------------------------------------------------
- 
+
 func TestValidateKeyField_ValidCommon(t *testing.T) {
 	validFields := []string{"pid", "tid", "uid", "gid", "timestamp", "comm", "kind"}
 	for _, f := range validFields {
@@ -500,7 +500,7 @@ func TestValidateKeyField_ValidCommon(t *testing.T) {
 		}
 	}
 }
- 
+
 func TestValidateKeyField_ValidModuleSpecific(t *testing.T) {
 	validFields := []string{
 		"syscall", "syscall_nr",
@@ -513,7 +513,7 @@ func TestValidateKeyField_ValidModuleSpecific(t *testing.T) {
 		}
 	}
 }
- 
+
 func TestValidateKeyField_Invalid(t *testing.T) {
 	invalidFields := []string{"portt", "process", "name", "srcport", "bogus", ""}
 	for _, f := range invalidFields {
@@ -522,7 +522,7 @@ func TestValidateKeyField_Invalid(t *testing.T) {
 		}
 	}
 }
- 
+
 func TestValidateKeyField_ErrorMessage(t *testing.T) {
 	err := ValidateKeyField("bogus")
 	if err == nil {

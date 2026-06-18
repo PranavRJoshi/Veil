@@ -10,10 +10,10 @@ func TestJoin(t *testing.T) {
 	sentinel2 := errors.New("error two")
 
 	cases := []struct {
-		name     string
-		input    []error
-		wantNil  bool
-		wantMsg  string
+		name    string
+		input   []error
+		wantNil bool
+		wantMsg string
 	}{
 		{
 			name:    "nil slice returns nil",

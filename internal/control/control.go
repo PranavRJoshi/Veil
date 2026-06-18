@@ -299,9 +299,9 @@ func Interactive(h *Handler, w io.Writer, cancel <-chan struct{}) InteractiveRes
 	}
 
 	completer := readline.NewPrefixCompleter(
-		readline.PcItem("add",   mapItems...),
-		readline.PcItem("del",   mapItems...),
-		readline.PcItem("list",  mapItems...),
+		readline.PcItem("add", mapItems...),
+		readline.PcItem("del", mapItems...),
+		readline.PcItem("list", mapItems...),
 		readline.PcItem("clear", mapItems...),
 		readline.PcItem("status"),
 		readline.PcItem("resume"),

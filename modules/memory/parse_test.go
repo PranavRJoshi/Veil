@@ -36,8 +36,8 @@ func buildRawMemEvent(pid, tid, uid uint32, evtType uint8,
 func TestParseEvent_RoundTrip(t *testing.T) {
 	raw := buildRawMemEvent(
 		1234, 1234, 0, /* pid, tid, uid */
-		0,             /* evt_type: major */
-		99999,         /* timestamp */
+		0,              /* evt_type: major */
+		99999,          /* timestamp */
 		0x7f4a2c001000, /* address */
 		"bash",
 	)

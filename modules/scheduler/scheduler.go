@@ -18,14 +18,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/ringbuf"
-	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/events"
+	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/loader"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/ringbuf"
 )
 
 func init() {
@@ -36,7 +36,7 @@ func init() {
 			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
 			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
-			{Name: "cpu", Short: "",  Description: "Filter by CPU core (comma-separated)", HasValue: true},
+			{Name: "cpu", Short: "", Description: "Filter by CPU core (comma-separated)", HasValue: true},
 		},
 		Factory: func(flags map[string]string, sinkIface interface{}) (interface{}, error) {
 			sink, ok := sinkIface.(output.EventSink)
@@ -302,13 +302,13 @@ func (t *SchedulerModule) Close() error {
 func (t *SchedulerModule) Run(done <-chan struct{}) {
 	for {
 		select {
-			case e, ok := <-t.Events:
-				if !ok {
-					return
-				}
-				t.sink.Emit("scheduler", schedulerToFields(e))
-			case <-done:
+		case e, ok := <-t.Events:
+			if !ok {
 				return
+			}
+			t.sink.Emit("scheduler", schedulerToFields(e))
+		case <-done:
+			return
 		}
 	}
 }
@@ -332,8 +332,8 @@ func schedulerToFields(e events.SchedulerEvent) map[string]interface{} {
 		"prev_comm":  commString(e.PrevComm),
 		"next_comm":  commString(e.NextComm),
 		/* "comm" for compatibility with enrichment and count defaults */
-		"comm":       commString(e.PrevComm),
-		"pid":        e.PrevPID,
+		"comm": commString(e.PrevComm),
+		"pid":  e.PrevPID,
 	}
 }
 

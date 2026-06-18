@@ -75,7 +75,7 @@ func TestFormatIPv4(t *testing.T) {
 		addr     uint32
 		expected string
 	}{
-		{0x0100007F, "127.0.0.1"},     /* 127.0.0.1 in little-endian */
+		{0x0100007F, "127.0.0.1"}, /* 127.0.0.1 in little-endian */
 		{0x00000000, "0.0.0.0"},
 		{0xFFFFFFFF, "255.255.255.255"},
 	}

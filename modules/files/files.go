@@ -7,14 +7,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/ringbuf"
-	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/events"
+	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/loader"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/ringbuf"
 )
 
 /*
@@ -51,13 +51,13 @@ func init() {
 	userspace filters (comm name, filename substring, operation type).
 */
 type FilterConfig struct {
-	PIDs         []uint32  /* -p flag: filter by PID (kernel-side) */
-	UIDs         []uint32  /* -u flag: filter by UID (kernel-side) */
-	CommName     string    /* -n flag: filter by process name (userspace) */
-	FileName     string    /* --file flag: path-aware filter (userspace, see matchesFilter) */
-	Ops          []string  /* --op flag: filter by operation type (selective kprobe attachment) */
-	DenyPIDs     []uint32  /* --pid !<pid>: exclude PIDs */
-	DenyUIDs     []uint32  /* --uid !<uid>: exclude UIDs */
+	PIDs     []uint32 /* -p flag: filter by PID (kernel-side) */
+	UIDs     []uint32 /* -u flag: filter by UID (kernel-side) */
+	CommName string   /* -n flag: filter by process name (userspace) */
+	FileName string   /* --file flag: path-aware filter (userspace, see matchesFilter) */
+	Ops      []string /* --op flag: filter by operation type (selective kprobe attachment) */
+	DenyPIDs []uint32 /* --pid !<pid>: exclude PIDs */
+	DenyUIDs []uint32 /* --uid !<uid>: exclude UIDs */
 }
 
 /*
@@ -75,7 +75,7 @@ var validOps = map[string]bool{
 */
 func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 	var cfg FilterConfig
- 
+
 	/* parse the filtered PIDs for this module, and must be comma-separated */
 	if raw, ok := flags["pid"]; ok {
 		for _, s := range strings.Split(raw, ",") {
@@ -97,7 +97,7 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 			cfg.DenyPIDs = append(cfg.DenyPIDs, uint32(v))
 		}
 	}
- 
+
 	/* parse the filtered UIDs for this module, and must be comma-separated */
 	if raw, ok := flags["uid"]; ok {
 		for _, s := range strings.Split(raw, ",") {
@@ -119,17 +119,17 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 			cfg.DenyUIDs = append(cfg.DenyUIDs, uint32(v))
 		}
 	}
- 
+
 	/* filter for command name (process name), if present */
 	if raw, ok := flags["name"]; ok {
 		cfg.CommName = raw
 	}
- 
+
 	/* filter for filename, if present */
 	if raw, ok := flags["file"]; ok {
 		cfg.FileName = raw
 	}
- 
+
 	/* filter for file-related opcode, must be open, read, or write, or combination */
 	if raw, ok := flags["op"]; ok {
 		for _, s := range strings.Split(raw, ",") {
@@ -140,7 +140,7 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 			cfg.Ops = append(cfg.Ops, op)
 		}
 	}
- 
+
 	return cfg, nil
 }
 
@@ -168,15 +168,15 @@ func (cfg *FilterConfig) wantOp(op string) bool {
 */
 type FilesModule struct {
 	*loader.BaseProgram
-	objs         FileAccessObjects
-	kprobeOpen   link.Link
-	kprobeRead   link.Link
-	kprobeWrite  link.Link
-	reader       *ringbuf.Reader
-	Events       chan events.FileEvent
-	filter       FilterConfig
-	sink         output.EventSink
-	updater      *mapUpdaterState
+	objs        FileAccessObjects
+	kprobeOpen  link.Link
+	kprobeRead  link.Link
+	kprobeWrite link.Link
+	reader      *ringbuf.Reader
+	Events      chan events.FileEvent
+	filter      FilterConfig
+	sink        output.EventSink
+	updater     *mapUpdaterState
 }
 
 /*
@@ -184,10 +184,10 @@ type FilesModule struct {
 */
 func New(filter FilterConfig, sink output.EventSink) *FilesModule {
 	return &FilesModule{
-		BaseProgram:    loader.NewBaseProgram("file_access"),
-		Events:         make(chan events.FileEvent, 256),
-		filter:         filter,
-		sink:           sink,
+		BaseProgram: loader.NewBaseProgram("file_access"),
+		Events:      make(chan events.FileEvent, 256),
+		filter:      filter,
+		sink:        sink,
 	}
 }
 
@@ -218,7 +218,7 @@ func (f *FilesModule) populateFilters() error {
 			}
 		}
 	}
- 
+
 	if len(f.filter.UIDs) > 0 {
 		mask |= 2
 		for _, uid := range f.filter.UIDs {
@@ -248,14 +248,14 @@ func (f *FilesModule) populateFilters() error {
 			}
 		}
 	}
- 
+
 	if mask != 0 {
 		cfgKey := uint32(0)
 		if err := f.objs.FilterCfg.Update(cfgKey, mask, ebpf.UpdateAny); err != nil {
 			return fmt.Errorf("files: set filter config: %w", err)
 		}
 	}
- 
+
 	return nil
 }
 
@@ -293,11 +293,11 @@ func (f *FilesModule) Load() error {
 
 	var err error
 	/*
-		The function Kprobe and Kretprobe are both defined in 
+		The function Kprobe and Kretprobe are both defined in
 		cilium/ebpf/link/kprobe.go and both of these functions
 		calls package-internal function named 'kprobe' defined
 		in the same file.
- 
+
 		Selective attachment: only attach hooks for operations
 		the user wants to trace. Only upon successful call to
 		these functions will the kernel start emitting data
@@ -377,13 +377,13 @@ func (f *FilesModule) Close() error {
 func (f *FilesModule) Run(done <-chan struct{}) {
 	for {
 		select {
-			case e, ok := <-f.Events:
-				if !ok {
-					return
-				}
-				f.sink.Emit("files", filesToFields(e))
-			case <-done:
+		case e, ok := <-f.Events:
+			if !ok {
 				return
+			}
+			f.sink.Emit("files", filesToFields(e))
+		case <-done:
+			return
 		}
 	}
 }
@@ -452,28 +452,28 @@ func (f *FilesModule) matchesFilter(e events.FileEvent) bool {
 	if f.filter.FileName != "" {
 		filter := f.filter.FileName
 		switch {
-			case strings.HasPrefix(filter, "/"):
-				if strings.HasSuffix(filter, "/") {
-					/* Directory prefix: --file /etc/ matches /etc/hosts */
-					if !strings.HasPrefix(e.FileName, filter) {
-						return false
-					}
-				} else {
-					/* Exact match, or treat as directory (e.g. /etc/hosts/) */
-					if e.FileName != filter && !strings.HasPrefix(e.FileName, filter+"/") {
-						return false
-					}
-				}
-			case strings.Contains(filter, "/"):
-				/* Relative suffix: --file etc/hosts matches /etc/hosts */
-				if !strings.HasSuffix(e.FileName, "/"+filter) {
+		case strings.HasPrefix(filter, "/"):
+			if strings.HasSuffix(filter, "/") {
+				/* Directory prefix: --file /etc/ matches /etc/hosts */
+				if !strings.HasPrefix(e.FileName, filter) {
 					return false
 				}
-			default:
-				/* Name only: --file hosts matches /etc/hosts, /var/lib/hosts */
-				if !strings.Contains(e.FileName, filter) {
+			} else {
+				/* Exact match, or treat as directory (e.g. /etc/hosts/) */
+				if e.FileName != filter && !strings.HasPrefix(e.FileName, filter+"/") {
 					return false
 				}
+			}
+		case strings.Contains(filter, "/"):
+			/* Relative suffix: --file etc/hosts matches /etc/hosts */
+			if !strings.HasSuffix(e.FileName, "/"+filter) {
+				return false
+			}
+		default:
+			/* Name only: --file hosts matches /etc/hosts, /var/lib/hosts */
+			if !strings.Contains(e.FileName, filter) {
+				return false
+			}
 		}
 	}
 	return true

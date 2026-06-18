@@ -25,14 +25,14 @@ const (
 */
 func (s State) String() string {
 	switch s {
-		case StateUnloaded:
-			return "unloaded"
-		case StateLoaded:
-			return "loaded"
-		case StateClosed:
-			return "closed"
-		default:
-			return fmt.Sprintf("unknown(%d)", s)
+	case StateUnloaded:
+		return "unloaded"
+	case StateLoaded:
+		return "loaded"
+	case StateClosed:
+		return "closed"
+	default:
+		return fmt.Sprintf("unknown(%d)", s)
 	}
 }
 
@@ -75,10 +75,10 @@ func NewBaseProgram(name string) *BaseProgram {
 
 /*
 	Accessor functions, or specifically getters for the fields
-	of BaseProgram structure.	
+	of BaseProgram structure.
 */
-func (b *BaseProgram) Name() string  { return b.name }
-func (b *BaseProgram) State() State  { return b.state }
+func (b *BaseProgram) Name() string { return b.name }
+func (b *BaseProgram) State() State { return b.state }
 
 /*
 	Mark the state of a BaseProgram instance to be 'StateLoaded'.
@@ -141,7 +141,6 @@ func (m *Manager) LoadAll() error {
 	}
 	return nil
 }
-
 
 /*
 	Close all loaded programs. For every closed programs, if an error occurs,

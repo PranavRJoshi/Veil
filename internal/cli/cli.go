@@ -13,15 +13,15 @@ import (
 	command line argument.
 */
 type Config struct {
-	Module       string            /* comma-separated module names */
-	ModuleFlags  map[string]string /* shared module key=value flags */
-	ControlPath  string            /* --control <path>: Unix socket */
-	EnrichFlags  string            /* --enrich <opts>: time,proc,user,all */
-	CountMode    bool              /* --count: enable count/summary mode */
-	CountKey     string            /* --count-by <field>: override aggregation key */
-	PprofPath    string            /* --pprof <path>: write CPU profile on exit */
-	ListModules  bool              /* --list-modules */
-	ShowHelp     bool              /* --help or -h */
+	Module      string            /* comma-separated module names */
+	ModuleFlags map[string]string /* shared module key=value flags */
+	ControlPath string            /* --control <path>: Unix socket */
+	EnrichFlags string            /* --enrich <opts>: time,proc,user,all */
+	CountMode   bool              /* --count: enable count/summary mode */
+	CountKey    string            /* --count-by <field>: override aggregation key */
+	PprofPath   string            /* --pprof <path>: write CPU profile on exit */
+	ListModules bool              /* --list-modules */
+	ShowHelp    bool              /* --help or -h */
 }
 
 /*
@@ -89,188 +89,188 @@ func Parse(args []string) (Config, error) {
 		os.Exit(0)
 	}
 
-	i := 0      /* used as index for argument vector */
+	i := 0 /* used as index for argument vector */
 	/* parse all the supplied command line arguments */
 	for i < len(args) {
 		arg := args[i]
 
 		switch {
-			case arg == "-h" || arg == "--help":
-				cfg.ShowHelp = true
-				return cfg, nil
+		case arg == "-h" || arg == "--help":
+			cfg.ShowHelp = true
+			return cfg, nil
 
-			case arg == "--list-modules":
-				cfg.ListModules = true
-				return cfg, nil
+		case arg == "--list-modules":
+			cfg.ListModules = true
+			return cfg, nil
 
-			case arg == "--module":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--module requires a value")
-				}
-				i++
-				cfg.Module = args[i]
+		case arg == "--module":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--module requires a value")
+			}
+			i++
+			cfg.Module = args[i]
 
-			case arg == "--output":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--output requires a value")
-				}
-				i++
-				cfg.ModuleFlags["output"] = args[i]
+		case arg == "--output":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--output requires a value")
+			}
+			i++
+			cfg.ModuleFlags["output"] = args[i]
 
-			case arg == "--control":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--control requires a socket path")
-				}
-				i++
-				cfg.ControlPath = args[i]
+		case arg == "--control":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--control requires a socket path")
+			}
+			i++
+			cfg.ControlPath = args[i]
 
-			case arg == "--enrich":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--enrich requires a value (time, proc, user, all)")
-				}
-				i++
-				cfg.EnrichFlags = args[i]
+		case arg == "--enrich":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--enrich requires a value (time, proc, user, all)")
+			}
+			i++
+			cfg.EnrichFlags = args[i]
 
-			case arg == "--count":
-				cfg.CountMode = true
+		case arg == "--count":
+			cfg.CountMode = true
 
-			case arg == "--count-by":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--count-by requires a field name")
-				}
-				i++
-				cfg.CountKey = args[i]
-				cfg.CountMode = true     /* --count-by implies --count */
+		case arg == "--count-by":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--count-by requires a field name")
+			}
+			i++
+			cfg.CountKey = args[i]
+			cfg.CountMode = true /* --count-by implies --count */
 
-			case arg == "--pprof":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--pprof requires an output file path")
-				}
-				i++
-				cfg.PprofPath = args[i]
+		case arg == "--pprof":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--pprof requires an output file path")
+			}
+			i++
+			cfg.PprofPath = args[i]
 
+		/*
+			Short-form: -p, -n, -s all take a value argument.
+			Long-form: --pid, --name, --syscall, --op, --path
+			all take a value argument.
+
+			We normalize them into a consistent key in ModuleFlags.
+		*/
+		case arg == "-p" || arg == "--pid":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("%s requires a value", arg)
+			}
+			i++
 			/*
-				Short-form: -p, -n, -s all take a value argument.
-				Long-form: --pid, --name, --syscall, --op, --path
-				all take a value argument.
-
-				We normalize them into a consistent key in ModuleFlags.
+				We pass a string that may be a comma separated numbers
+				which may optionally include the '!' character, indicating
+				exclusion (negation). This function returns two strings,
+				which are stored in allow and deny variables below.
 			*/
-			case arg == "-p" || arg == "--pid":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("%s requires a value", arg)
-				}
-				i++
-				/*
-					We pass a string that may be a comma separated numbers
-					which may optionally include the '!' character, indicating
-					exclusion (negation). This function returns two strings,
-					which are stored in allow and deny variables below.
-				*/
-				allow, deny := splitAllowDeny(args[i])
-				if allow != "" {
-					cfg.ModuleFlags["pid"] = allow
-				}
-				if deny != "" {
-					cfg.ModuleFlags["pid_deny"] = deny
-				}
+			allow, deny := splitAllowDeny(args[i])
+			if allow != "" {
+				cfg.ModuleFlags["pid"] = allow
+			}
+			if deny != "" {
+				cfg.ModuleFlags["pid_deny"] = deny
+			}
 
-			case arg == "-u" || arg == "--uid":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("%s requires a value", arg)
-				}
-				i++
-				allow, deny := splitAllowDeny(args[i])
-				if allow != "" {
-					cfg.ModuleFlags["uid"] = allow
-				}
-				if deny != "" {
-					cfg.ModuleFlags["uid_deny"] = deny
-				}
+		case arg == "-u" || arg == "--uid":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("%s requires a value", arg)
+			}
+			i++
+			allow, deny := splitAllowDeny(args[i])
+			if allow != "" {
+				cfg.ModuleFlags["uid"] = allow
+			}
+			if deny != "" {
+				cfg.ModuleFlags["uid_deny"] = deny
+			}
 
-			case arg == "-n" || arg == "--name":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("%s requires a value", arg)
-				}
-				i++
-				cfg.ModuleFlags["name"] = args[i]
+		case arg == "-n" || arg == "--name":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("%s requires a value", arg)
+			}
+			i++
+			cfg.ModuleFlags["name"] = args[i]
 
-		/* syscall module specific */
-			case arg == "-s" || arg == "--syscall":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("%s requires a value", arg)
-				}
-				i++
-				allow, deny := splitAllowDeny(args[i])
-				if allow != "" {
-					cfg.ModuleFlags["syscall"] = allow
-				}
-				if deny != "" {
-					cfg.ModuleFlags["syscall_deny"] = deny
-				}
+			/* syscall module specific */
+		case arg == "-s" || arg == "--syscall":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("%s requires a value", arg)
+			}
+			i++
+			allow, deny := splitAllowDeny(args[i])
+			if allow != "" {
+				cfg.ModuleFlags["syscall"] = allow
+			}
+			if deny != "" {
+				cfg.ModuleFlags["syscall_deny"] = deny
+			}
 
-		/* file module specific */
-			case arg == "--op":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--op requires a value")
-				}
-				i++
-				cfg.ModuleFlags["op"] = args[i]
+			/* file module specific */
+		case arg == "--op":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--op requires a value")
+			}
+			i++
+			cfg.ModuleFlags["op"] = args[i]
 
-			case arg == "--file":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--file requires a value")
-				}
-				i++
-				cfg.ModuleFlags["file"] = args[i]
+		case arg == "--file":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--file requires a value")
+			}
+			i++
+			cfg.ModuleFlags["file"] = args[i]
 
-		/* network module specific */
-			case arg == "--port":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--port requires a value")
-				}
-				i++
-				allow, deny := splitAllowDeny(args[i])
-				if allow != "" {
-					cfg.ModuleFlags["port"] = allow
-				}
-				if deny != "" {
-					cfg.ModuleFlags["port_deny"] = deny
-				}
+			/* network module specific */
+		case arg == "--port":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--port requires a value")
+			}
+			i++
+			allow, deny := splitAllowDeny(args[i])
+			if allow != "" {
+				cfg.ModuleFlags["port"] = allow
+			}
+			if deny != "" {
+				cfg.ModuleFlags["port_deny"] = deny
+			}
 
-		/* scheduler module specific */
-			case arg == "--cpu":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--cpu requires a value")
-				}
-				i++
-				allow, deny := splitAllowDeny(args[i])
-				if allow != "" {
-					cfg.ModuleFlags["cpu"] = allow
-				}
-				if deny != "" {
-					cfg.ModuleFlags["cpu_deny"] = deny
-				}
+			/* scheduler module specific */
+		case arg == "--cpu":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--cpu requires a value")
+			}
+			i++
+			allow, deny := splitAllowDeny(args[i])
+			if allow != "" {
+				cfg.ModuleFlags["cpu"] = allow
+			}
+			if deny != "" {
+				cfg.ModuleFlags["cpu_deny"] = deny
+			}
 
-		/* memory module specific */
-			case arg == "--fault":
-				if i+1 >= len(args) {
-					return cfg, fmt.Errorf("--fault requires a value")
-				}
-				i++
-				allow, deny := splitAllowDeny(args[i])
-				if allow != "" {
-					cfg.ModuleFlags["fault"] = allow
-				}
-				if deny != "" {
-					cfg.ModuleFlags["fault_deny"] = deny
-				}
+			/* memory module specific */
+		case arg == "--fault":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--fault requires a value")
+			}
+			i++
+			allow, deny := splitAllowDeny(args[i])
+			if allow != "" {
+				cfg.ModuleFlags["fault"] = allow
+			}
+			if deny != "" {
+				cfg.ModuleFlags["fault_deny"] = deny
+			}
 
-			case strings.HasPrefix(arg, "-"):
-				return cfg, fmt.Errorf("unknown flag: %s", arg)
+		case strings.HasPrefix(arg, "-"):
+			return cfg, fmt.Errorf("unknown flag: %s", arg)
 
-			default:
-				return cfg, fmt.Errorf("unexpected argument: %s", arg)
+		default:
+			return cfg, fmt.Errorf("unexpected argument: %s", arg)
 		}
 
 		i++
@@ -294,7 +294,6 @@ func Parse(args []string) (Config, error) {
 			return cfg, fmt.Errorf("unknown module %q; use --list-modules to see available modules", name)
 		}
 	}
-
 
 	return cfg, nil
 }

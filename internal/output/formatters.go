@@ -6,7 +6,7 @@ import "fmt"
 	Module-specific text formatters.
 	Each reproduces the existing fmt.Printf output from the corresponding
 	module's Run() method, so switching to the sink is a transparent change.
-	
+
 	SyscallTextFormat formats syscall events as the original module does.
 	If enrichment fields (time, username, proc_name) are present, they are included in the output. This allows the formatter to work transparently with or without enrichment enabled.
 */
@@ -142,11 +142,11 @@ func MemoryTextFormat(module string, f map[string]interface{}) string {
 	Used by the CLI to select the right formatter when --output=text (default).
 */
 var ModuleFormatters = map[string]TextFormatFunc{
-	"syscall": SyscallTextFormat,
-	"files":   FilesTextFormat,
-	"network": NetworkTextFormat,
+	"syscall":   SyscallTextFormat,
+	"files":     FilesTextFormat,
+	"network":   NetworkTextFormat,
 	"scheduler": SchedulerTextFormat,
-	"memory": MemoryTextFormat,
+	"memory":    MemoryTextFormat,
 }
 
 /*

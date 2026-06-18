@@ -106,16 +106,16 @@ func TestSchedulerTextFormat_RoundTrip(t *testing.T) {
 	got := SchedulerTextFormat("scheduler", fields)
 
 	checks := []struct {
-		label    string
-		substr   string
+		label  string
+		substr string
 	}{
-		{"cpu",        "CPU=2"},
-		{"prev_comm",  "nginx"},
-		{"prev_pid",   "PID=1001"},
-		{"prev_prio",  "prio=120"},
-		{"next_comm",  "kworker"},
-		{"next_pid",   "PID=50"},
-		{"next_prio",  "prio=100"},
+		{"cpu", "CPU=2"},
+		{"prev_comm", "nginx"},
+		{"prev_pid", "PID=1001"},
+		{"prev_prio", "prio=120"},
+		{"next_comm", "kworker"},
+		{"next_pid", "PID=50"},
+		{"next_prio", "prio=100"},
 		{"prev_state", "TASK_RUNNING"},
 	}
 
@@ -142,12 +142,12 @@ func TestMemoryTextFormat_RoundTrip(t *testing.T) {
 		label  string
 		substr string
 	}{
-		{"comm",     "python3"},
-		{"pid",      "PID=3456"},
-		{"tid",      "TID=3456"},
-		{"uid",      "UID=1000"},
+		{"comm", "python3"},
+		{"pid", "PID=3456"},
+		{"tid", "TID=3456"},
+		{"uid", "UID=1000"},
 		{"evt_type", "fault=minor"},
-		{"address",  "addr=0x7f8b3c000000"},
+		{"address", "addr=0x7f8b3c000000"},
 	}
 
 	for _, c := range checks {
@@ -168,9 +168,9 @@ func TestSyscallTextFormat_WithEnrichment(t *testing.T) {
 		"syscall": "openat", "syscall_nr": uint64(257),
 		"time": "14:32:05.123", "username": "root", "proc_name": "bash",
 	}
- 
+
 	got := SyscallTextFormat("syscall", fields)
- 
+
 	if !strings.HasPrefix(got, "[14:32:05.123] ") {
 		t.Errorf("expected time prefix, got %q", got)
 	}
@@ -188,9 +188,9 @@ func TestSyscallTextFormat_WithoutEnrichment(t *testing.T) {
 		"uid": uint32(0), "gid": uint32(0), "comm": "bash",
 		"syscall": "openat", "syscall_nr": uint64(257),
 	}
- 
+
 	got := SyscallTextFormat("syscall", fields)
- 
+
 	if strings.Contains(got, "[") {
 		t.Errorf("should not have time prefix without enrichment: %q", got)
 	}
@@ -208,9 +208,9 @@ func TestFilesTextFormat_WithEnrichment(t *testing.T) {
 		"comm": "nginx", "op": "read", "filename": "nginx.conf",
 		"time": "10:00:00.000", "username": "www-data",
 	}
- 
+
 	got := FilesTextFormat("files", fields)
- 
+
 	if !strings.HasPrefix(got, "[10:00:00.000] ") {
 		t.Errorf("expected time prefix, got %q", got)
 	}
@@ -228,9 +228,9 @@ func TestNetworkTextFormat_WithEnrichment(t *testing.T) {
 		"oldstate": "CLOSE", "newstate": "SYN_SENT",
 		"time": "09:15:30.456", "proc_name": "curl",
 	}
- 
+
 	got := NetworkTextFormat("network", fields)
- 
+
 	if !strings.HasPrefix(got, "[09:15:30.456] ") {
 		t.Errorf("expected time prefix, got %q", got)
 	}

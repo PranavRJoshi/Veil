@@ -19,14 +19,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/ringbuf"
-	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/events"
+	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/loader"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/ringbuf"
 )
 
 func init() {
@@ -37,7 +37,7 @@ func init() {
 			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
 			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
-			{Name: "fault", Short: "",  Description: "Filter by fault type: major, minor (comma-separated)", HasValue: true},
+			{Name: "fault", Short: "", Description: "Filter by fault type: major, minor (comma-separated)", HasValue: true},
 		},
 		Factory: func(flags map[string]string, sinkIface interface{}) (interface{}, error) {
 			sink, ok := sinkIface.(output.EventSink)
@@ -75,12 +75,12 @@ type FilterConfig struct {
 */
 func faultTypeFromName(name string) (uint32, error) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-		case "major":
-			return 0, nil
-		case "minor":
-			return 1, nil
-		default:
-			return 0, fmt.Errorf("unknown fault type %q (valid: major, minor)", name)
+	case "major":
+		return 0, nil
+	case "minor":
+		return 1, nil
+	default:
+		return 0, fmt.Errorf("unknown fault type %q (valid: major, minor)", name)
 	}
 }
 
@@ -162,14 +162,14 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 
 type MemoryModule struct {
 	*loader.BaseProgram
-	objs         MemoryTracerObjects
-	kprobeEntry  link.Link
-	kretReturn   link.Link
-	reader       *ringbuf.Reader
-	Events       chan events.MemoryEvent
-	filter       FilterConfig
-	sink         output.EventSink
-	updater      *mapUpdaterState
+	objs        MemoryTracerObjects
+	kprobeEntry link.Link
+	kretReturn  link.Link
+	reader      *ringbuf.Reader
+	Events      chan events.MemoryEvent
+	filter      FilterConfig
+	sink        output.EventSink
+	updater     *mapUpdaterState
 }
 
 func New(filter FilterConfig, sink output.EventSink) *MemoryModule {
@@ -338,13 +338,13 @@ func (m *MemoryModule) Close() error {
 func (m *MemoryModule) Run(done <-chan struct{}) {
 	for {
 		select {
-			case e, ok := <-m.Events:
-				if !ok {
-					return
-				}
-				m.sink.Emit("memory", memoryToFields(e))
-			case <-done:
+		case e, ok := <-m.Events:
+			if !ok {
 				return
+			}
+			m.sink.Emit("memory", memoryToFields(e))
+		case <-done:
+			return
 		}
 	}
 }

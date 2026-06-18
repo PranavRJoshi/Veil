@@ -37,18 +37,18 @@ import (
 	module's toFields function.
 */
 var defaultKeyFields = map[string]string{
-	"syscall": "syscall",
-	"files":   "filename",
-	"network": "dport",
+	"syscall":   "syscall",
+	"files":     "filename",
+	"network":   "dport",
 	"scheduler": "next_comm",
-	"memory": "evt_type",
+	"memory":    "evt_type",
 }
 
 /*
 	validKeyFields is the complete set of field names that can appear
 	in event field maps across all modules. This is used to validate
 	the --count-by argument at parse time.
- 
+
 	Common fields (all modules): pid, tid, uid, gid, timestamp, comm, kind
 	Syscall: syscall, syscall_nr
 	Files: filename, op

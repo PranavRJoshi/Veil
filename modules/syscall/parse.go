@@ -41,7 +41,7 @@ func parseEvent(raw []byte) (events.SyscallEvent, error) {
 	copy(se.Comm[:], raw[32:48])
 
 	return events.SyscallEvent{
-		Event: events.Event {
+		Event: events.Event{
 			Kind:      events.KindSyscall,
 			PID:       se.PID,
 			TID:       se.TID,
@@ -49,7 +49,7 @@ func parseEvent(raw []byte) (events.SyscallEvent, error) {
 			GID:       se.GID,
 			Timestamp: se.Timestamp,
 			Comm:      se.Comm,
-		}, 
+		},
 		SyscallNr: se.SyscallNr,
 	}, nil
 }

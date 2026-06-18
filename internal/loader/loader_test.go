@@ -11,7 +11,7 @@ import (
 */
 type stubProgram struct {
 	*BaseProgram
-	loadErr  error
+	loadErr error
 }
 
 /*
@@ -120,7 +120,7 @@ func TestManagerLoadAllStopsOnError(t *testing.T) {
 }
 
 /*
-	Test for ManagerCloseAll. 
+	Test for ManagerCloseAll.
 */
 func TestManagerCloseAllContinuesOnError(t *testing.T) {
 	m := NewManager()

@@ -14,9 +14,9 @@ import (
 // ---------------------------------------------------------------------------
 
 type fakeMapUpdater struct {
-	mu     sync.Mutex
-	name   string
-	maps   map[string]map[uint64]bool
+	mu   sync.Mutex
+	name string
+	maps map[string]map[uint64]bool
 }
 
 func newFakeMapUpdater(name string, mapNames ...string) *fakeMapUpdater {

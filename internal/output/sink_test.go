@@ -108,7 +108,7 @@ func TestFilterSink_Drops(t *testing.T) {
 		return mod == "syscall"
 	})
 	_ = filtered.Emit("network", sampleFields()) // should be dropped
-	_ = filtered.Emit("syscall", sampleFields())  // should pass
+	_ = filtered.Emit("syscall", sampleFields()) // should pass
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 	if len(lines) != 1 {
 		t.Errorf("expected 1 line, got %d: %v", len(lines), lines)
@@ -121,12 +121,12 @@ func TestFilterSink_Drops(t *testing.T) {
 // ---------------------------------------------------------------------------
 // PausableSink
 // ---------------------------------------------------------------------------
- 
+
 func TestPausableSink_ForwardsByDefault(t *testing.T) {
 	var buf bytes.Buffer
 	inner := NewTextSink(&buf, nil)
 	p := NewPausableSink(inner)
- 
+
 	_ = p.Emit("test", sampleFields())
 	if buf.Len() == 0 {
 		t.Error("expected output when not paused")
@@ -137,12 +137,12 @@ func TestPausableSink_DropsWhenPaused(t *testing.T) {
 	var buf bytes.Buffer
 	inner := NewTextSink(&buf, nil)
 	p := NewPausableSink(inner)
- 
+
 	p.Pause()
 	_ = p.Emit("test", sampleFields())
 	_ = p.Emit("test", sampleFields())
 	_ = p.Emit("test", sampleFields())
- 
+
 	if buf.Len() != 0 {
 		t.Error("expected no output when paused")
 	}
@@ -152,17 +152,17 @@ func TestPausableSink_ResumeReturnsDropCount(t *testing.T) {
 	var buf bytes.Buffer
 	inner := NewTextSink(&buf, nil)
 	p := NewPausableSink(inner)
- 
+
 	p.Pause()
 	_ = p.Emit("a", sampleFields())
 	_ = p.Emit("b", sampleFields())
 	_ = p.Emit("c", sampleFields())
- 
+
 	dropped := p.Resume()
 	if dropped != 3 {
 		t.Errorf("expected 3 dropped, got %d", dropped)
 	}
- 
+
 	// After resume, events should flow again
 	_ = p.Emit("d", sampleFields())
 	if buf.Len() == 0 {
@@ -174,11 +174,11 @@ func TestPausableSink_ResumeResetsCounter(t *testing.T) {
 	var buf bytes.Buffer
 	inner := NewTextSink(&buf, nil)
 	p := NewPausableSink(inner)
- 
+
 	p.Pause()
 	_ = p.Emit("a", sampleFields())
 	p.Resume()
- 
+
 	// Second pause/resume cycle
 	p.Pause()
 	dropped := p.Resume()
@@ -228,9 +228,9 @@ func TestPausableSink_ConcurrentPauseResume(t *testing.T) {
 	var buf bytes.Buffer
 	inner := NewTextSink(&buf, nil)
 	p := NewPausableSink(inner)
- 
+
 	done := make(chan struct{})
- 
+
 	// Writer goroutine: emit continuously
 	go func() {
 		defer func() { done <- struct{}{} }()
@@ -238,7 +238,7 @@ func TestPausableSink_ConcurrentPauseResume(t *testing.T) {
 			p.Emit("test", map[string]interface{}{"i": i})
 		}
 	}()
- 
+
 	// Controller goroutine: pause and resume rapidly
 	go func() {
 		defer func() { done <- struct{}{} }()
@@ -247,7 +247,7 @@ func TestPausableSink_ConcurrentPauseResume(t *testing.T) {
 			p.Resume()
 		}
 	}()
- 
+
 	<-done
 	<-done
 	// If there's a race condition, -race will catch it.

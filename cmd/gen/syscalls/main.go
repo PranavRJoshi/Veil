@@ -44,8 +44,8 @@ type entry struct {
 	Name string
 }
 
-func findHeader () (string, error) {
-	candidates := []string {
+func findHeader() (string, error) {
+	candidates := []string{
 		"/usr/include/asm/unistd_64.h",
 		"/usr/include/asm-generic/unistd_64.h",
 		"/usr/include/x86_64-linux-gnu/asm/unistd_64.h",
@@ -53,7 +53,7 @@ func findHeader () (string, error) {
 	}
 
 	/*
-		Check the availability of the header file. If found, return the absolute 
+		Check the availability of the header file. If found, return the absolute
 		path to header.
 	*/
 	for _, p := range candidates {
@@ -94,7 +94,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error opening %s: %v\n", headerPath, err)
 		os.Exit(1)
 	}
-	defer f.Close()		/* ensure we properly close file on return */
+	defer f.Close() /* ensure we properly close file on return */
 
 	seen := make(map[uint64]bool)
 	var entries []entry

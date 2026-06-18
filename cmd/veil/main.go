@@ -21,11 +21,11 @@ import (
 		calls registry.Register(). Adding a new module to Veil
 		requires only adding one blank import line here.
 	*/
-	_ "github.com/PranavRJoshi/Veil/modules/syscall"
 	_ "github.com/PranavRJoshi/Veil/modules/files"
+	_ "github.com/PranavRJoshi/Veil/modules/memory"
 	_ "github.com/PranavRJoshi/Veil/modules/network"
 	_ "github.com/PranavRJoshi/Veil/modules/scheduler"
-	_ "github.com/PranavRJoshi/Veil/modules/memory"
+	_ "github.com/PranavRJoshi/Veil/modules/syscall"
 )
 
 func main() {
@@ -35,12 +35,12 @@ func main() {
 		cli.Usage()
 		os.Exit(1)
 	}
- 
+
 	if cfg.ShowHelp {
 		cli.Usage()
 		os.Exit(0)
 	}
- 
+
 	if cfg.ListModules {
 		cli.PrintModules()
 		os.Exit(0)
@@ -99,10 +99,10 @@ func main() {
 	*/
 	var baseSink output.EventSink
 	switch cfg.ModuleFlags["output"] {
-		case "json":
-			baseSink = output.NewJSONSink(os.Stdout)
-		default:
-			baseSink = output.NewTextSink(os.Stdout, output.DispatchTextFormat())
+	case "json":
+		baseSink = output.NewJSONSink(os.Stdout)
+	default:
+		baseSink = output.NewTextSink(os.Stdout, output.DispatchTextFormat())
 	}
 	pausable := output.NewPausableSink(baseSink)
 	defer baseSink.Close()
@@ -118,17 +118,17 @@ func main() {
 		var opts []enrich.EnricherOption
 		for _, name := range strings.Split(cfg.EnrichFlags, ",") {
 			switch strings.TrimSpace(name) {
-				case "time":
-					opts = append(opts, enrich.WithTimestamp())
-				case "proc":
-					opts = append(opts, enrich.WithProcName())
-				case "user":
-					opts = append(opts, enrich.WithUserName())
-				case "all":
-					opts = append(opts, enrich.WithTimestamp(),
-								enrich.WithProcName(), enrich.WithUserName())
-				default:
-					fmt.Fprintf(os.Stderr,
+			case "time":
+				opts = append(opts, enrich.WithTimestamp())
+			case "proc":
+				opts = append(opts, enrich.WithProcName())
+			case "user":
+				opts = append(opts, enrich.WithUserName())
+			case "all":
+				opts = append(opts, enrich.WithTimestamp(),
+					enrich.WithProcName(), enrich.WithUserName())
+			default:
+				fmt.Fprintf(os.Stderr,
 					"warning: unknown enricher %q (valid: time, proc, user, all)\n",
 					name)
 			}
@@ -178,7 +178,7 @@ func main() {
 	var modules []runner.Module
 
 	for _, name := range moduleNames {
-		info, _ := registry.Get(name)    /* already validated by CLI */
+		info, _ := registry.Get(name) /* already validated by CLI */
 
 		modIface, err := info.Factory(cfg.ModuleFlags, sink)
 		if err != nil {
@@ -189,8 +189,8 @@ func main() {
 		mod, ok := modIface.(runner.Module)
 		if !ok {
 			fmt.Fprintf(os.Stderr,
-			"module %s does not implement runner.Module\n",
-			name)
+				"module %s does not implement runner.Module\n",
+				name)
 			os.Exit(1)
 		}
 		modules = append(modules, mod)
@@ -243,12 +243,12 @@ func main() {
 
 	if cfg.CountMode {
 		fmt.Fprintf(os.Stderr,
-		"Veil [%s] running in count mode, press CTRL-C to stop and show summary\n",
-		cfg.Module)
+			"Veil [%s] running in count mode, press CTRL-C to stop and show summary\n",
+			cfg.Module)
 	} else {
 		fmt.Fprintf(os.Stderr,
-		"Veil [%s] running, press CTRL-C to pause and modify filters\n",
-		cfg.Module)
+			"Veil [%s] running, press CTRL-C to pause and modify filters\n",
+			cfg.Module)
 	}
 
 	/*
@@ -259,11 +259,11 @@ func main() {
 		"quit"/exit   - shut down
 		Second CTRL-C - shut down (while in interactive mode)
 	*/
-	sigCh := make(chan os.Signal, 1)     /* buffered channel */
+	sigCh := make(chan os.Signal, 1) /* buffered channel */
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	for {
-		sig := <- sigCh
+		sig := <-sigCh
 
 		/* SIGTERM always means immeditate shutdown */
 		if sig == syscall.SIGTERM {
@@ -321,7 +321,7 @@ func main() {
 		signal.Reset(syscall.SIGINT)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	}
- 
+
 	close(done)
 
 	/*
@@ -352,7 +352,7 @@ func parseModuleNames(raw string) []string {
 /*
 	buildUpdater constructs a MapUpdater from the loaded modules. If only one
 	module is loaded and it implements MapUpdater, use it directly (no module
-	prefix needed in commands). For multiple modules, build a 
+	prefix needed in commands). For multiple modules, build a
 	compositeUpdater that dispatches by module name.
 
 	If a module doesn't implement MapUpdater, it gets a stub entry that reports
@@ -405,18 +405,18 @@ type compositeUpdater struct {
 	"syscall" is syscall-only, "port" is network-only.
 */
 var mapOwnership = map[string][]string{
-	"pid":           {"syscall", "files", "network", "scheduler", "memory"},
-	"uid":           {"syscall", "files", "network", "scheduler", "memory"},
-	"syscall":       {"syscall"},
-	"port":          {"network"},
-	"cpu":           {"scheduler"},
-	"fault":         {"memory"},
-	"pid_deny":      {"syscall", "files", "network", "scheduler", "memory"},
-	"uid_deny":      {"syscall", "files", "network", "scheduler", "memory"},
-	"syscall_deny":  {"syscall"},
-	"port_deny":     {"network"},
-	"cpu_deny":      {"scheduler"},
-	"fault_deny":    {"memory"},
+	"pid":          {"syscall", "files", "network", "scheduler", "memory"},
+	"uid":          {"syscall", "files", "network", "scheduler", "memory"},
+	"syscall":      {"syscall"},
+	"port":         {"network"},
+	"cpu":          {"scheduler"},
+	"fault":        {"memory"},
+	"pid_deny":     {"syscall", "files", "network", "scheduler", "memory"},
+	"uid_deny":     {"syscall", "files", "network", "scheduler", "memory"},
+	"syscall_deny": {"syscall"},
+	"port_deny":    {"network"},
+	"cpu_deny":     {"scheduler"},
+	"fault_deny":   {"memory"},
 }
 
 /*
@@ -469,7 +469,7 @@ func (c *compositeUpdater) loadedNames() []string {
 
 	return names
 }
- 
+
 func (c *compositeUpdater) AddFilter(mapName string, key uint64) error {
 	targets, realMap, err := c.resolveTargets(mapName)
 	if err != nil {
@@ -486,7 +486,7 @@ func (c *compositeUpdater) AddFilter(mapName string, key uint64) error {
 
 	return lastErr
 }
- 
+
 func (c *compositeUpdater) DelFilter(mapName string, key uint64) error {
 	targets, realMap, err := c.resolveTargets(mapName)
 	if err != nil {
@@ -521,7 +521,7 @@ func (c *compositeUpdater) DelFilter(mapName string, key uint64) error {
 
 	return delErr
 }
- 
+
 func (c *compositeUpdater) ListFilters(mapName string) ([]uint64, error) {
 	targets, realMap, err := c.resolveTargets(mapName)
 	if err != nil {
@@ -563,7 +563,7 @@ func (c *compositeUpdater) ListFiltersDetailed(mapName string) (map[string][]uin
 	}
 	return result, nil
 }
- 
+
 func (c *compositeUpdater) ClearFilters(mapName string) error {
 	targets, realMap, err := c.resolveTargets(mapName)
 	if err != nil {

@@ -14,7 +14,7 @@ func TestEventKindString(t *testing.T) {
 		{KindMemory, "memory"},
 		{EventKind(99), "unknown (99)"},
 	}
- 
+
 	for _, c := range cases {
 		got := c.kind.String()
 		if got != c.expected {
@@ -26,7 +26,7 @@ func TestEventKindString(t *testing.T) {
 func TestProcessName_Short(t *testing.T) {
 	e := Event{}
 	copy(e.Comm[:], "bash")
- 
+
 	got := e.ProcessName()
 	if got != "bash" {
 		t.Errorf("ProcessName() = %q, want %q", got, "bash")
@@ -42,7 +42,7 @@ func TestProcessName_15CharsWithNull(t *testing.T) {
 	name := "systemd-resolve" /* exactly 15 characters */
 	copy(e.Comm[:], name)
 	e.Comm[15] = 0 /* explicit null terminator */
- 
+
 	got := e.ProcessName()
 	if got != "systemd-resolve" {
 		t.Errorf("ProcessName() = %q, want %q", got, "systemd-resolve")
@@ -56,7 +56,7 @@ func TestProcessName_15CharsWithNull(t *testing.T) {
 func TestProcessName_Full16Bytes(t *testing.T) {
 	e := Event{}
 	copy(e.Comm[:], "0123456789abcdef")
- 
+
 	got := e.ProcessName()
 	if got != "0123456789abcdef" {
 		t.Errorf("ProcessName() = %q, want 16-char string", got)
@@ -85,7 +85,7 @@ func TestProcessName_AllZero(t *testing.T) {
 func TestProcessName_EmbeddedNull(t *testing.T) {
 	e := Event{}
 	copy(e.Comm[:], "ab\x00cd")
- 
+
 	got := e.ProcessName()
 	if got != "ab" {
 		t.Errorf("ProcessName() = %q, want %q (stop at first null)", got, "ab")
@@ -98,7 +98,7 @@ func TestProcessName_EmbeddedNull(t *testing.T) {
 func TestProcessName_SingleChar(t *testing.T) {
 	e := Event{}
 	e.Comm[0] = 'x'
- 
+
 	got := e.ProcessName()
 	if got != "x" {
 		t.Errorf("ProcessName() = %q, want %q", got, "x")

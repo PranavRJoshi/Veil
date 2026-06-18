@@ -112,10 +112,10 @@ func TestRunAll_BlocksUntilDone(t *testing.T) {
 	close(done)
 
 	select {
-		case <-finished:
-			// ok
-		case <-time.After(time.Second):
-			t.Fatal("RunAll did not return after done was closed")
+	case <-finished:
+		// ok
+	case <-time.After(time.Second):
+		t.Fatal("RunAll did not return after done was closed")
 	}
 
 	_ = mr.CloseAll()
@@ -160,8 +160,8 @@ type orderTrackingModule struct {
 	order *[]string
 }
 
-func (m *orderTrackingModule) Name() string    { return m.name }
-func (m *orderTrackingModule) Load() error     { return nil }
+func (m *orderTrackingModule) Name() string          { return m.name }
+func (m *orderTrackingModule) Load() error           { return nil }
 func (m *orderTrackingModule) Run(_ <-chan struct{}) {}
 func (m *orderTrackingModule) Close() error {
 	*m.order = append(*m.order, m.name)

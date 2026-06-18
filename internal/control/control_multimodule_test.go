@@ -28,17 +28,17 @@ func newQualifiedFakeUpdater() *qualifiedFakeUpdater {
 	return &qualifiedFakeUpdater{
 		fakeUpdater: fakeUpdater{
 			maps: map[string]map[uint64]bool{
-				"pid":            {},
-				"uid":            {},
-				"port":           {},
-				"syscall":        {},
-				"pid_deny":       {},
-				"uid_deny":       {},
-				"port_deny":      {},
-				"syscall_deny":   {},
-				"network.port":   {},
-				"syscall.pid":    {},
-				"network.pid":    {},
+				"pid":          {},
+				"uid":          {},
+				"port":         {},
+				"syscall":      {},
+				"pid_deny":     {},
+				"uid_deny":     {},
+				"port_deny":    {},
+				"syscall_deny": {},
+				"network.port": {},
+				"syscall.pid":  {},
+				"network.pid":  {},
 			},
 		},
 	}

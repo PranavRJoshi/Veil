@@ -41,9 +41,9 @@ import (
 	bitmask. This avoids repeating the switch logic in every method.
 */
 type filterMeta struct {
-	bpfMap    *ebpf.Map
-	bit       uint32    /* bitmask position: 1, 2, or 4 */
-	keySize   int       /* bytes: 4 for uint32, 8 for uint64 */
+	bpfMap  *ebpf.Map
+	bit     uint32 /* bitmask position: 1, 2, or 4 */
+	keySize int    /* bytes: 4 for uint32, 8 for uint64 */
 }
 
 /*
@@ -52,9 +52,9 @@ type filterMeta struct {
 	prompt.
 */
 type mapUpdaterState struct {
-	mu         sync.Mutex
-	filters    map[string]filterMeta
-	cfgMap     *ebpf.Map    /* filter_cfg array map */
+	mu      sync.Mutex
+	filters map[string]filterMeta
+	cfgMap  *ebpf.Map /* filter_cfg array map */
 }
 
 /*
@@ -228,7 +228,7 @@ func (s *mapUpdaterState) setBit(bit uint32) error {
 		return err
 	}
 
-	if mask & bit != 0 {
+	if mask&bit != 0 {
 		return nil /* already set */
 	}
 	mask |= bit
@@ -246,7 +246,7 @@ func (s *mapUpdaterState) clearBit(bit uint32) error {
 		return err
 	}
 
-	if mask & bit == 0 {
+	if mask&bit == 0 {
 		return nil /* already clear */
 	}
 	/*
@@ -295,13 +295,13 @@ func (s *mapUpdaterState) writeCfg(mask uint32) error {
 
 func updateMapKey(m *ebpf.Map, key uint64, value uint8, keySize int) error {
 	switch keySize {
-		case 4:
-			k := uint32(key)
-			return m.Update(k, value, ebpf.UpdateAny)
-		case 8:
-			return m.Update(key, value, ebpf.UpdateAny)
-		default:
-			return fmt.Errorf("unsupported key size: %d", keySize)
+	case 4:
+		k := uint32(key)
+		return m.Update(k, value, ebpf.UpdateAny)
+	case 8:
+		return m.Update(key, value, ebpf.UpdateAny)
+	default:
+		return fmt.Errorf("unsupported key size: %d", keySize)
 	}
 }
 
@@ -320,13 +320,13 @@ func lookupMapKey(m *ebpf.Map, key uint64, keySize int) bool {
 
 func deleteMapKey(m *ebpf.Map, key uint64, keySize int) error {
 	switch keySize {
-		case 4:
-			k := uint32(key)
-			return m.Delete(k)
-		case 8:
-			return m.Delete(key)
-		default:
-			return fmt.Errorf("unsupported key size: %d", keySize)
+	case 4:
+		k := uint32(key)
+		return m.Delete(k)
+	case 8:
+		return m.Delete(key)
+	default:
+		return fmt.Errorf("unsupported key size: %d", keySize)
 	}
 }
 
@@ -334,28 +334,28 @@ func iterateMapKeys(m *ebpf.Map, keySize int) ([]uint64, error) {
 	var keys []uint64
 
 	switch keySize {
-		case 4:
-			var key uint32
-			iter := m.Iterate()
-			var val uint8
+	case 4:
+		var key uint32
+		iter := m.Iterate()
+		var val uint8
 
-			for iter.Next(&key, &val) {
-				keys = append(keys, uint64(key))
-			}
+		for iter.Next(&key, &val) {
+			keys = append(keys, uint64(key))
+		}
 
-			return keys, iter.Err()
-		case 8:
-			var key uint64
-			iter := m.Iterate()
-			var val uint8
+		return keys, iter.Err()
+	case 8:
+		var key uint64
+		iter := m.Iterate()
+		var val uint8
 
-			for iter.Next(&key, &val) {
-				keys = append(keys, key)
-			}
+		for iter.Next(&key, &val) {
+			keys = append(keys, key)
+		}
 
-			return keys, iter.Err()
-		default:
-			return nil, fmt.Errorf("unsupported key size: %d", keySize)
+		return keys, iter.Err()
+	default:
+		return nil, fmt.Errorf("unsupported key size: %d", keySize)
 	}
 }
 

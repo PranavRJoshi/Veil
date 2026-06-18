@@ -21,20 +21,20 @@ const (
 /*
 	String() method for EventKind used to return the stringified version of the enumeration defined above.
 */
-func (k EventKind) String () string {
+func (k EventKind) String() string {
 	switch k {
-		case KindSyscall:
-			return "syscall"
-		case KindNetwork:
-			return "network"
-		case KindFileAccess:
-			return "file access"
-		case KindScheduler:
-			return "scheduler"
-		case KindMemory:
-			return "memory"
-		default:
-			return fmt.Sprintf("unknown (%d)", k)
+	case KindSyscall:
+		return "syscall"
+	case KindNetwork:
+		return "network"
+	case KindFileAccess:
+		return "file access"
+	case KindScheduler:
+		return "scheduler"
+	case KindMemory:
+		return "memory"
+	default:
+		return fmt.Sprintf("unknown (%d)", k)
 	}
 }
 
@@ -42,13 +42,13 @@ func (k EventKind) String () string {
 	The common "envelope" for everything coming out of the kernel.
 */
 type Event struct {
-	Kind            EventKind
-	PID             uint32
-	TID             uint32
-	UID             uint32
-	GID             uint32
-	Comm            [16]byte     // kernel gives us 15 chars and 1 null terminator
-	Timestamp       uint64
+	Kind      EventKind
+	PID       uint32
+	TID       uint32
+	UID       uint32
+	GID       uint32
+	Comm      [16]byte // kernel gives us 15 chars and 1 null terminator
+	Timestamp uint64
 }
 
 /*
@@ -57,7 +57,7 @@ type Event struct {
 */
 type SyscallEvent struct {
 	Event
-	SyscallNr       uint64
+	SyscallNr uint64
 }
 
 /*
@@ -66,8 +66,8 @@ type SyscallEvent struct {
 */
 type FileEvent struct {
 	Event
-	FileName        string
-	Op              string
+	FileName string
+	Op       string
 }
 
 /*
@@ -78,13 +78,13 @@ type FileEvent struct {
 */
 type NetworkEvent struct {
 	Event
-	SrcAddr   uint32   /* IPv4 source address, network byte order */
-	DstAddr   uint32   /* IPv4 destination address, network byte order */
-	SrcPort   uint16   /* source port, host byte order */
-	DstPort   uint16   /* destination port, host byte order */
-	EvtType   uint8    /* EVT_CONNECT, EVT_ESTABLISHED, etc. */
-	OldState  uint8    /* previous TCP state */
-	NewState  uint8    /* new TCP state */
+	SrcAddr  uint32 /* IPv4 source address, network byte order */
+	DstAddr  uint32 /* IPv4 destination address, network byte order */
+	SrcPort  uint16 /* source port, host byte order */
+	DstPort  uint16 /* destination port, host byte order */
+	EvtType  uint8  /* EVT_CONNECT, EVT_ESTABLISHED, etc. */
+	OldState uint8  /* previous TCP state */
+	NewState uint8  /* new TCP state */
 }
 
 /*
@@ -103,8 +103,8 @@ type SchedulerEvent struct {
 	PrevState uint64   /* why prev was descheduled (TASK_RUNNING, etc.) */
 	PrevPrio  uint32   /* scheduler priority of prev */
 	NextPrio  uint32   /* scheduler priority of next */
-	PrevComm  [16]byte  /* process name of prev task */
-	NextComm  [16]byte  /* process name of next task */
+	PrevComm  [16]byte /* process name of prev task */
+	NextComm  [16]byte /* process name of next task */
 }
 
 /*
@@ -115,8 +115,8 @@ type SchedulerEvent struct {
 */
 type MemoryEvent struct {
 	Event
-	EvtType  uint8    /* 0 = major fault, 1 = minor fault */
-	Address  uint64   /* faulting virtual address */
+	EvtType uint8  /* 0 = major fault, 1 = minor fault */
+	Address uint64 /* faulting virtual address */
 }
 
 /*
@@ -124,7 +124,7 @@ type MemoryEvent struct {
 	A null terminator check is done, and the slice is returned,
 	else all 16 bytes of Comm field is returned.
 */
-func (e Event) ProcessName () string {
+func (e Event) ProcessName() string {
 	for i, b := range e.Comm {
 		if b == 0 {
 			return string(e.Comm[:i])

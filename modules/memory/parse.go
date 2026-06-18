@@ -57,11 +57,11 @@ func parseEvent(raw []byte) (events.MemoryEvent, error) {
 */
 func faultTypeName(t uint8) string {
 	switch t {
-		case 0:
-			return "major"
-		case 1:
-			return "minor"
-		default:
-			return fmt.Sprintf("unknown(%d)", t)
+	case 0:
+		return "major"
+	case 1:
+		return "minor"
+	default:
+		return fmt.Sprintf("unknown(%d)", t)
 	}
 }

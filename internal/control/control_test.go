@@ -309,14 +309,14 @@ func TestServer_Del(t *testing.T) {
 func TestServer_ListPopulated(t *testing.T) {
 	sock := tempSockPath(t)
 	defer os.Remove(sock)
- 
+
 	updater := newFakeUpdater()
 	srv := NewServer(sock, NewHandler(updater))
 	if err := srv.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	defer srv.Stop()
- 
+
 	/*
 		Add two entries, then list. The list response is multi-line,
 		one key per line. We use a raw connection to read all lines.
@@ -327,9 +327,9 @@ func TestServer_ListPopulated(t *testing.T) {
 	}
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(2 * time.Second))
- 
+
 	scanner := bufio.NewScanner(conn)
- 
+
 	/* Add two PIDs */
 	fmt.Fprintln(conn, "add pid 100")
 	if !scanner.Scan() {
@@ -338,7 +338,7 @@ func TestServer_ListPopulated(t *testing.T) {
 	if scanner.Text() != "OK" {
 		t.Fatalf("add 100: got %q", scanner.Text())
 	}
- 
+
 	fmt.Fprintln(conn, "add pid 200")
 	if !scanner.Scan() {
 		t.Fatal("no response for add 200")
@@ -346,10 +346,10 @@ func TestServer_ListPopulated(t *testing.T) {
 	if scanner.Text() != "OK" {
 		t.Fatalf("add 200: got %q", scanner.Text())
 	}
- 
+
 	/* List: response is "100\n200" (two lines, order may vary) */
 	fmt.Fprintln(conn, "list pid")
- 
+
 	var listed []string
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -363,11 +363,11 @@ func TestServer_ListPopulated(t *testing.T) {
 			break
 		}
 	}
- 
+
 	if len(listed) != 2 {
 		t.Fatalf("expected 2 list entries, got %d: %v", len(listed), listed)
 	}
- 
+
 	/* Verify both keys are present (order not guaranteed from map iteration) */
 	seen := map[string]bool{}
 	for _, l := range listed {
@@ -381,13 +381,13 @@ func TestServer_ListPopulated(t *testing.T) {
 func TestServer_ListEmpty(t *testing.T) {
 	sock := tempSockPath(t)
 	defer os.Remove(sock)
- 
+
 	srv := NewServer(sock, NewHandler(newFakeUpdater()))
 	if err := srv.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	defer srv.Stop()
- 
+
 	resp := sendCommand(t, sock, "list pid")
 	if resp != "(empty)" {
 		t.Errorf("expected '(empty)' for empty list, got %q", resp)
@@ -397,7 +397,7 @@ func TestServer_ListEmpty(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Handler direct tests
 // ---------------------------------------------------------------------------
- 
+
 func TestHandler_AddDuplicateWarn(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 
@@ -421,12 +421,12 @@ func TestHandler_AddDuplicateWarn(t *testing.T) {
 func TestHandler_AddAndList(t *testing.T) {
 	updater := newFakeUpdater()
 	h := NewHandler(updater)
- 
+
 	resp := h.HandleCommand("add pid 42")
 	if resp != "OK" {
 		t.Errorf("add: got %q, want OK", resp)
 	}
- 
+
 	resp = h.HandleCommand("list pid")
 	if resp != "42" {
 		t.Errorf("list: got %q, want '42'", resp)
@@ -435,7 +435,7 @@ func TestHandler_AddAndList(t *testing.T) {
 
 func TestHandler_ResumeQuit(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
- 
+
 	if got := h.HandleCommand("resume"); got != "CMD:resume" {
 		t.Errorf("resume: got %q, want CMD:resume", got)
 	}
@@ -446,7 +446,7 @@ func TestHandler_ResumeQuit(t *testing.T) {
 		t.Errorf("exit: got %q, want CMD:exit", got)
 	}
 }
- 
+
 func TestHandler_EmptyCommand(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	if got := h.HandleCommand(""); got != "" {
@@ -460,23 +460,23 @@ func TestHandler_EmptyCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Interactive tests
 // ---------------------------------------------------------------------------
- 
+
 func TestInteractive_Resume(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	input := strings.NewReader("add pid 100\nresume\n")
 	var out strings.Builder
- 
+
 	result := interactiveScanner(h, input, &out)
 	if result != ResultResume {
 		t.Errorf("expected ResultResume, got %d", result)
 	}
 }
- 
+
 func TestInteractive_Quit(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	input := strings.NewReader("quit\n")
 	var out strings.Builder
- 
+
 	result := interactiveScanner(h, input, &out)
 	if result != ResultQuit {
 		t.Errorf("expected ResultQuit, got %d", result)
@@ -487,20 +487,20 @@ func TestInteractive_EOF(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	input := strings.NewReader("") // EOF immediately
 	var out strings.Builder
- 
+
 	result := interactiveScanner(h, input, &out)
 	if result != ResultQuit {
 		t.Errorf("expected ResultQuit on EOF, got %d", result)
 	}
 }
- 
+
 func TestInteractive_CommandOutput(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	input := strings.NewReader("add pid 42\nstatus\nquit\n")
 	var out strings.Builder
- 
+
 	interactiveScanner(h, input, &out)
- 
+
 	output := out.String()
 	if !strings.Contains(output, "OK") {
 		t.Errorf("output should contain 'OK' from add: %q", output)
@@ -513,11 +513,11 @@ func TestInteractive_CommandOutput(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Handler: additional command coverage
 // ---------------------------------------------------------------------------
- 
+
 func TestHandler_Del(t *testing.T) {
 	updater := newFakeUpdater()
 	h := NewHandler(updater)
- 
+
 	h.HandleCommand("add pid 42")
 	resp := h.HandleCommand("del pid 42")
 	if resp != "OK" {
@@ -528,11 +528,11 @@ func TestHandler_Del(t *testing.T) {
 		t.Errorf("list after del: got %q, want (empty)", resp)
 	}
 }
- 
+
 func TestHandler_Clear(t *testing.T) {
 	updater := newFakeUpdater()
 	h := NewHandler(updater)
- 
+
 	h.HandleCommand("add uid 0")
 	h.HandleCommand("add uid 1000")
 	resp := h.HandleCommand("clear uid")
@@ -552,7 +552,7 @@ func TestHandler_Status(t *testing.T) {
 		t.Errorf("status: got %q, want 'test-status: ok'", resp)
 	}
 }
- 
+
 func TestHandler_Help(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	resp := h.HandleCommand("help")
@@ -560,7 +560,7 @@ func TestHandler_Help(t *testing.T) {
 		t.Errorf("help should contain header, got %q", resp)
 	}
 }
- 
+
 func TestHandler_UnknownCommand(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	resp := h.HandleCommand("frobnicate")
@@ -569,7 +569,6 @@ func TestHandler_UnknownCommand(t *testing.T) {
 	}
 }
 
-
 func TestHandler_UnknownMap(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	resp := h.HandleCommand("add bogus 123")
@@ -577,7 +576,7 @@ func TestHandler_UnknownMap(t *testing.T) {
 		t.Errorf("expected ERR for unknown map, got %q", resp)
 	}
 }
- 
+
 func TestHandler_InvalidKey(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	resp := h.HandleCommand("add pid notanumber")
@@ -586,10 +585,9 @@ func TestHandler_InvalidKey(t *testing.T) {
 	}
 }
 
-
 func TestHandler_BadArgCount(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
- 
+
 	if resp := h.HandleCommand("add pid"); !strings.HasPrefix(resp, "ERR") {
 		t.Errorf("add with 1 arg: got %q", resp)
 	}
@@ -607,23 +605,23 @@ func TestHandler_BadArgCount(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Interactive: exit command
 // ---------------------------------------------------------------------------
- 
+
 func TestInteractive_Exit(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	input := strings.NewReader("exit\n")
 	var out strings.Builder
- 
+
 	result := interactiveScanner(h, input, &out)
 	if result != ResultQuit {
 		t.Errorf("expected ResultQuit for 'exit', got %d", result)
 	}
 }
- 
+
 func TestInteractive_EmptyLines(t *testing.T) {
 	h := NewHandler(newFakeUpdater())
 	input := strings.NewReader("\n\n\nquit\n")
 	var out strings.Builder
- 
+
 	result := interactiveScanner(h, input, &out)
 	if result != ResultQuit {
 		t.Errorf("expected ResultQuit, got %d", result)
@@ -633,18 +631,18 @@ func TestInteractive_EmptyLines(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Server: resume/quit commands should not be forwarded over socket
 // ---------------------------------------------------------------------------
- 
+
 func TestServer_SocketIgnoresResumeQuit(t *testing.T) {
 	sock := tempSockPath(t)
 	defer os.Remove(sock)
- 
+
 	updater := newFakeUpdater()
 	srv := NewServer(sock, NewHandler(updater))
 	if err := srv.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	defer srv.Stop()
- 
+
 	// Send "resume" over the socket; it should be silently ignored
 	// (no response), not crash or close the connection.
 	conn, err := net.DialTimeout("unix", sock, time.Second)
@@ -653,12 +651,12 @@ func TestServer_SocketIgnoresResumeQuit(t *testing.T) {
 	}
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(time.Second))
- 
+
 	scanner := bufio.NewScanner(conn)
- 
+
 	// Send resume; should produce no response
 	fmt.Fprintln(conn, "resume")
- 
+
 	// Send a real command after to prove the connection is still alive
 	fmt.Fprintln(conn, "status")
 	if !scanner.Scan() {

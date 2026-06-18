@@ -40,11 +40,11 @@ func buildRawSchedEvent(prevPID, nextPID, prevTID, nextTID, uid, cpu uint32,
 
 func TestParseEvent_RoundTrip(t *testing.T) {
 	raw := buildRawSchedEvent(
-		1234, 5678,    /* prev_pid, next_pid */
-		1234, 5678,    /* prev_tid, next_tid */
-		0, 2,          /* uid, cpu */
+		1234, 5678, /* prev_pid, next_pid */
+		1234, 5678, /* prev_tid, next_tid */
+		0, 2, /* uid, cpu */
 		0x0001, 99999, /* prev_state (SLEEPING), timestamp */
-		120, 110,      /* prev_prio, next_prio */
+		120, 110, /* prev_prio, next_prio */
 		"bash", "nginx",
 	)
 

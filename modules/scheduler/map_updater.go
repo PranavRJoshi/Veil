@@ -209,62 +209,62 @@ func (s *mapUpdaterState) writeCfg(mask uint32) error {
 
 func updateMapKey(m *ebpf.Map, key uint64, value uint8, keySize int) error {
 	switch keySize {
-		case 4:
-			k := uint32(key)
-			return m.Update(k, value, ebpf.UpdateAny)
-		case 8:
-			return m.Update(key, value, ebpf.UpdateAny)
-		default:
-			return fmt.Errorf("unsupported key size: %d", keySize)
+	case 4:
+		k := uint32(key)
+		return m.Update(k, value, ebpf.UpdateAny)
+	case 8:
+		return m.Update(key, value, ebpf.UpdateAny)
+	default:
+		return fmt.Errorf("unsupported key size: %d", keySize)
 	}
 }
 
 func lookupMapKey(m *ebpf.Map, key uint64, keySize int) bool {
 	var val uint8
 	switch keySize {
-		case 4:
-			k := uint32(key)
-			return m.Lookup(k, &val) == nil
-		case 8:
-			return m.Lookup(key, &val) == nil
-		default:
-			return false
+	case 4:
+		k := uint32(key)
+		return m.Lookup(k, &val) == nil
+	case 8:
+		return m.Lookup(key, &val) == nil
+	default:
+		return false
 	}
 }
 
 func deleteMapKey(m *ebpf.Map, key uint64, keySize int) error {
 	switch keySize {
-		case 4:
-			k := uint32(key)
-			return m.Delete(k)
-		case 8:
-			return m.Delete(key)
-		default:
-			return fmt.Errorf("unsupported key size: %d", keySize)
+	case 4:
+		k := uint32(key)
+		return m.Delete(k)
+	case 8:
+		return m.Delete(key)
+	default:
+		return fmt.Errorf("unsupported key size: %d", keySize)
 	}
 }
 
 func iterateMapKeys(m *ebpf.Map, keySize int) ([]uint64, error) {
 	var keys []uint64
 	switch keySize {
-		case 4:
-			var key uint32
-			iter := m.Iterate()
-			var val uint8
-			for iter.Next(&key, &val) {
-				keys = append(keys, uint64(key))
-			}
-			return keys, iter.Err()
-		case 8:
-			var key uint64
-			iter := m.Iterate()
-			var val uint8
-			for iter.Next(&key, &val) {
-				keys = append(keys, key)
-			}
-			return keys, iter.Err()
-		default:
-			return nil, fmt.Errorf("unsupported key size: %d", keySize)
+	case 4:
+		var key uint32
+		iter := m.Iterate()
+		var val uint8
+		for iter.Next(&key, &val) {
+			keys = append(keys, uint64(key))
+		}
+		return keys, iter.Err()
+	case 8:
+		var key uint64
+		iter := m.Iterate()
+		var val uint8
+		for iter.Next(&key, &val) {
+			keys = append(keys, key)
+		}
+		return keys, iter.Err()
+	default:
+		return nil, fmt.Errorf("unsupported key size: %d", keySize)
 	}
 }
 

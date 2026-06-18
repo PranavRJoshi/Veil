@@ -40,14 +40,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/ringbuf"
-	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/events"
+	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/loader"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/ringbuf"
 )
 
 /*
@@ -77,18 +77,17 @@ func init() {
 	})
 }
 
-
 /*
 	FilterConfig holds the parsed filter values from CLI flags.
 */
 type FilterConfig struct {
-	PIDs      []uint32   /* -p flag: filter by PID */
-	UIDs      []uint32   /* -u flag: filter by UID */
-	Ports     []uint16   /* --port flag: filter by port number */
-	CommName  string     /* -n flag: filter by process name (userspace) */
-	DenyPIDs  []uint32   /* --pid !<pid>: exclude PIDs */
-	DenyUIDs  []uint32   /* --uid !<uid>: exclude UIDs */
-	DenyPorts []uint16   /* --port !<port>: exclude ports */
+	PIDs      []uint32 /* -p flag: filter by PID */
+	UIDs      []uint32 /* -u flag: filter by UID */
+	Ports     []uint16 /* --port flag: filter by port number */
+	CommName  string   /* -n flag: filter by process name (userspace) */
+	DenyPIDs  []uint32 /* --pid !<pid>: exclude PIDs */
+	DenyUIDs  []uint32 /* --uid !<uid>: exclude UIDs */
+	DenyPorts []uint16 /* --port !<port>: exclude ports */
 }
 
 /*
@@ -172,16 +171,16 @@ func ParseFilterConfig(flags map[string]string) (FilterConfig, error) {
 */
 type NetworkModule struct {
 	*loader.BaseProgram
-	objs           NetworkTracerObjects
-	tpState        link.Link          /* tracepoint/sock/inet_sock_set_state */
-	kprobeConnect  link.Link          /* kprobe/tcp_v4_connect */
-	kretAccept     link.Link          /* kretprobe/inet_csk_accept */
-	kprobeListen   link.Link          /* kprobe/inet_listen */
-	reader         *ringbuf.Reader
-	Events         chan events.NetworkEvent
-	filter         FilterConfig
-	sink           output.EventSink
-	updater        *mapUpdaterState
+	objs          NetworkTracerObjects
+	tpState       link.Link /* tracepoint/sock/inet_sock_set_state */
+	kprobeConnect link.Link /* kprobe/tcp_v4_connect */
+	kretAccept    link.Link /* kretprobe/inet_csk_accept */
+	kprobeListen  link.Link /* kprobe/inet_listen */
+	reader        *ringbuf.Reader
+	Events        chan events.NetworkEvent
+	filter        FilterConfig
+	sink          output.EventSink
+	updater       *mapUpdaterState
 }
 
 /*
@@ -256,7 +255,7 @@ func (n *NetworkModule) populateFilters() error {
 			}
 		}
 	}
- 
+
 	/* Populate deny port filter map */
 	if len(n.filter.DenyPorts) > 0 {
 		mask |= 32
@@ -386,13 +385,13 @@ func (n *NetworkModule) Close() error {
 func (n *NetworkModule) Run(done <-chan struct{}) {
 	for {
 		select {
-			case e, ok := <-n.Events:
-				if !ok {
-					return
-				}
-				n.sink.Emit("network", networkToFields(e))
-			case <-done:
+		case e, ok := <-n.Events:
+			if !ok {
 				return
+			}
+			n.sink.Emit("network", networkToFields(e))
+		case <-done:
+			return
 		}
 	}
 }
@@ -403,18 +402,18 @@ func (n *NetworkModule) Run(done <-chan struct{}) {
 */
 func networkToFields(e events.NetworkEvent) map[string]interface{} {
 	return map[string]interface{}{
-		"kind":     e.Kind.String(),
-		"pid":      e.PID,
-		"uid":      e.UID,
+		"kind":      e.Kind.String(),
+		"pid":       e.PID,
+		"uid":       e.UID,
 		"timestamp": e.Timestamp,
-		"comm":     e.ProcessName(),
-		"evt_type": EvtTypeName(e.EvtType),
-		"saddr":    FormatIPv4(e.SrcAddr),
-		"sport":    e.SrcPort,
-		"daddr":    FormatIPv4(e.DstAddr),
-		"dport":    e.DstPort,
-		"oldstate": TCPStateName(e.OldState),
-		"newstate": TCPStateName(e.NewState),
+		"comm":      e.ProcessName(),
+		"evt_type":  EvtTypeName(e.EvtType),
+		"saddr":     FormatIPv4(e.SrcAddr),
+		"sport":     e.SrcPort,
+		"daddr":     FormatIPv4(e.DstAddr),
+		"dport":     e.DstPort,
+		"oldstate":  TCPStateName(e.OldState),
+		"newstate":  TCPStateName(e.NewState),
 	}
 }
 

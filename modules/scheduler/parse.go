@@ -100,27 +100,27 @@ func commString(b [16]byte) string {
 */
 func prevStateName(state uint64) string {
 	switch state & 0x0FFF {
-		case 0x0000:
-			return "RUNNING"
-		case 0x0001:
-			return "SLEEPING"
-		case 0x0002:
-			return "DISK_SLEEP"
-		case 0x0004:
-			return "STOPPED"
-		case 0x0008:
-			return "TRACED"
-		case 0x0010:
-			return "EXIT_DEAD"
-		case 0x0020:
-			return "ZOMBIE"
-		case 0x0040:
-			return "PARKED"
-		case 0x0080:
-			return "DEAD"
-		case 0x0800:
-			return "NEW"
-		default:
-			return fmt.Sprintf("0x%x", state)
+	case 0x0000:
+		return "RUNNING"
+	case 0x0001:
+		return "SLEEPING"
+	case 0x0002:
+		return "DISK_SLEEP"
+	case 0x0004:
+		return "STOPPED"
+	case 0x0008:
+		return "TRACED"
+	case 0x0010:
+		return "EXIT_DEAD"
+	case 0x0020:
+		return "ZOMBIE"
+	case 0x0040:
+		return "PARKED"
+	case 0x0080:
+		return "DEAD"
+	case 0x0800:
+		return "NEW"
+	default:
+		return fmt.Sprintf("0x%x", state)
 	}
 }
