@@ -15,7 +15,7 @@
       }
       .ctrl-line {
         stroke-dasharray: 6 3;
-        animation: flow-rev 2s linear infinite;
+        animation: flow-fwd 2s linear infinite;
       }
       @keyframes flow-fwd { to { stroke-dashoffset: -24; } }
       @keyframes flow-rev { to { stroke-dashoffset:  24; } }
