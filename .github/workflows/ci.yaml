@@ -3,8 +3,22 @@ name: Veil (build and test)
 on:
   push:
     branches: [ master ]
+    paths:
+      - '**/*.go'
+      - 'bpf/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - '.github/workflows/ci.yaml'
   pull_request:
     branches: [ master ]
+    paths:
+      - '**/*.go'
+      - 'bpf/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - '.github/workflows/ci.yaml'
 
 jobs:
   build:
