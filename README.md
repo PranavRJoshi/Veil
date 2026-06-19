@@ -38,42 +38,9 @@ sudo ./bin/veil --module syscall,network,files --enrich all
 
 ## Architecture
 
-```
-                    ┌─────────────────────────────────────────────┐
-                    │                  Kernel                     │
-                    │                                             │
-                    │   tracepoint ──> BPF program ──> filter     │
-                    │   kprobe ──────> BPF program     maps       │
-                    │                       │                     │
-                    │                  ring buffer                │
-                    └───────────────────────┬─────────────────────┘
-                                            │
-                    ┌───────────────────────┼─────────────────────┐
-                    │               Userspace (Go)                │
-                    │                       │                     │
-                    │               ringbuf.Reader                │
-                    │                       │                     │
-                    │              parseEvent (binary)            │
-                    │                       │                     │
-                    │              userspace filters              │
-                    │                       │                     │
-                    │    ┌──────────────────┼──────────────────┐  │
-                    │    │           EventSink pipeline        │  │
-                    │    │                                     │  │
-                    │    │  PausableSink > EnrichSink > Output │  │
-                    │    │                                │    │  │
-                    │    │                            TextSink │  │
-                    │    │                            JSONSink │  │
-                    │    │                            CountSink│  │
-                    │    └─────────────────────────────────────┘  │
-                    │                                             │
-                    │    ┌──────────────────────────────────────┐ │
-                    │    │        Runtime control               │ │
-                    │    │  interactive prompt / Unix socket    │ │
-                    │    │  > add/del/list/clear filter keys    │ │
-                    │    └──────────────────────────────────────┘ │
-                    └─────────────────────────────────────────────┘
-```
+![Veil Architecture](docs/architecture.svg)
+
+> Open [docs/architecture.svg](docs/architecture.svg) directly in a browser for interactive hover tooltips and animated data-flow arrows.
 
 Every module follows the same pattern: a BPF C program defines the kernel-side hook and filter maps, a Go package implements `loader.Program` and `runner.Module`, and an `init()` function self-registers with the module registry. Adding a new module requires no changes to the core; just a blank import in `main.go`.
 

@@ -1,0 +1,420 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 970 860"
+     font-family="system-ui,Arial,sans-serif" font-size="13">
+  <defs>
+    <style>
+      .section-label { font-size: 11px; font-weight: bold; letter-spacing: 0.08em; }
+      .comp { cursor: pointer; }
+      .comp .box { transition: filter 0.15s; }
+      .comp:hover .box { filter: brightness(0.88); }
+      .sink { cursor: pointer; }
+      .sink .box { transition: filter 0.15s; }
+      .sink:hover .box { filter: brightness(0.85); }
+      .flow-line {
+        stroke-dasharray: 8 4;
+        animation: flow-fwd 1.4s linear infinite;
+      }
+      .ctrl-line {
+        stroke-dasharray: 6 3;
+        animation: flow-rev 2s linear infinite;
+      }
+      @keyframes flow-fwd { to { stroke-dashoffset: -24; } }
+      @keyframes flow-rev { to { stroke-dashoffset:  24; } }
+    </style>
+    <!-- arrowhead markers -->
+    <marker id="arr-dark"   markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#374151"/></marker>
+    <marker id="arr-green"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#15803d"/></marker>
+    <marker id="arr-amber"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#b45309"/></marker>
+    <marker id="arr-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#7c3aed"/></marker>
+  </defs>
+
+  <!-- ================================================================ -->
+  <!-- TITLE                                                            -->
+  <!-- ================================================================ -->
+  <text x="485" y="26" text-anchor="middle" font-size="17" font-weight="bold" fill="#111827">
+    Veil -- eBPF Observability Architecture
+  </text>
+
+  <!-- ================================================================ -->
+  <!-- MODULE REGISTRY                                                  -->
+  <!-- ================================================================ -->
+  <g class="comp" transform="translate(285,36)">
+    <rect class="box" width="400" height="30" rx="6"
+          fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="200" y="19" text-anchor="middle" fill="#4c1d95" font-size="11" font-weight="bold">
+      Module Registry -- init() self-registration via blank imports
+    </text>
+    <title>Each module calls registry.Register() from its init() function.
+main.go triggers registration with blank imports:
+  _ "github.com/PranavRJoshi/Veil/modules/syscall"
+Adding a new module requires no changes to core code.</title>
+  </g>
+  <line x1="485" y1="67" x2="485" y2="82"
+        stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arr-purple)"/>
+
+  <!-- ================================================================ -->
+  <!-- KERNEL SECTION                                                   -->
+  <!-- ================================================================ -->
+  <rect x="16" y="84" width="860" height="222" rx="8"
+        fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="30" y="101" class="section-label" fill="#1e3a5f">KERNEL SPACE</text>
+
+  <!-- syscall -->
+  <g class="comp" transform="translate(26,107)">
+    <rect class="box" width="155" height="56" rx="5"
+          fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="77" y="18" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="bold">syscall</text>
+    <text x="77" y="33" text-anchor="middle" fill="#1e40af" font-size="9">tracepoint/raw_syscalls/</text>
+    <text x="77" y="45" text-anchor="middle" fill="#1e40af" font-size="9">sys_enter</text>
+    <title>raw_syscalls/sys_enter tracepoint.
+Captures every syscall entry: PID, UID, syscall number.
+Filter maps: pid_filter, uid_filter, syscall_filter (allow + deny each).</title>
+  </g>
+
+  <!-- files -->
+  <g class="comp" transform="translate(193,107)">
+    <rect class="box" width="155" height="56" rx="5"
+          fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="77" y="18" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="bold">files</text>
+    <text x="77" y="33" text-anchor="middle" fill="#1e40af" font-size="9">kprobe: vfs_open,</text>
+    <text x="77" y="45" text-anchor="middle" fill="#1e40af" font-size="9">vfs_read, vfs_write</text>
+    <title>kprobes on vfs_open, vfs_read, vfs_write.
+Captures file path (from dentry), operation type, PID, UID.
+Filter maps: pid_filter, uid_filter (allow + deny each).</title>
+  </g>
+
+  <!-- network -->
+  <g class="comp" transform="translate(360,107)">
+    <rect class="box" width="155" height="56" rx="5"
+          fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="77" y="18" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="bold">network</text>
+    <text x="77" y="31" text-anchor="middle" fill="#1e40af" font-size="9">kprobe: tcp_v4_connect,</text>
+    <text x="77" y="42" text-anchor="middle" fill="#1e40af" font-size="9">kretprobe: inet_csk_accept,</text>
+    <text x="77" y="53" text-anchor="middle" fill="#1e40af" font-size="9">kprobe: inet_listen, tp: inet_sock</text>
+    <title>4 hooks: kprobe/tcp_v4_connect, kretprobe/inet_csk_accept,
+kprobe/inet_listen, tracepoint/sock/inet_sock_set_state.
+Captures src/dst IP, port, TCP state transitions, PID.
+Filter maps: pid_filter, uid_filter, port_filter (allow + deny each).</title>
+  </g>
+
+  <!-- scheduler -->
+  <g class="comp" transform="translate(527,107)">
+    <rect class="box" width="155" height="56" rx="5"
+          fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="77" y="18" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="bold">scheduler</text>
+    <text x="77" y="33" text-anchor="middle" fill="#1e40af" font-size="9">tracepoint/sched/</text>
+    <text x="77" y="45" text-anchor="middle" fill="#1e40af" font-size="9">sched_switch</text>
+    <title>sched/sched_switch tracepoint.
+Captures context switches: prev/next PID, comm, CPU,
+scheduling priority, prev state (RUNNING / SLEEPING / ...).
+Filter maps: pid_filter, uid_filter, cpu_filter (allow + deny each).</title>
+  </g>
+
+  <!-- memory -->
+  <g class="comp" transform="translate(694,107)">
+    <rect class="box" width="155" height="56" rx="5"
+          fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="77" y="18" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="bold">memory</text>
+    <text x="77" y="33" text-anchor="middle" fill="#1e40af" font-size="9">kprobe+kretprobe:</text>
+    <text x="77" y="45" text-anchor="middle" fill="#1e40af" font-size="9">handle_mm_fault</text>
+    <title>kprobe + kretprobe on handle_mm_fault.
+Captures page fault type (major/minor), faulting address, PID, UID.
+Filter maps: pid_filter, uid_filter, fault_filter (allow + deny each).
+Internal: fault_scratch (BPF_MAP_TYPE_PERCPU_ARRAY) correlates kprobe/kretprobe pairs.</title>
+  </g>
+
+  <!-- BPF filter maps bar -->
+  <g class="comp" transform="translate(26,174)">
+    <rect class="box" width="823" height="46" rx="5"
+          fill="#93c5fd" stroke="#1d4ed8" stroke-width="1.5"/>
+    <text x="411" y="19" text-anchor="middle" fill="#1e3a5f" font-size="11" font-weight="bold">
+      BPF Hash Maps: allow (pid, uid, syscall, port, cpu, fault) | deny (_deny variants)
+    </text>
+    <text x="411" y="34" text-anchor="middle" fill="#1e40af" font-size="9">
+      armed-but-empty map drops all events -- filter_cfg array map (bitmask) tracks which maps are active per module
+    </text>
+    <title>BPF_MAP_TYPE_HASH maps store filter keys as u64.
+Each module has allow and deny variants per filter type.
+filter_cfg is a BPF_MAP_TYPE_ARRAY holding a bitmask:
+  bit 0 = pid_filter active, bit 1 = uid_filter active, etc.
+If bitmask is 0, all events pass (no filtering).
+If a bit is set (armed) but the map has no entries, every event is dropped --
+configured-but-unpopulated means drop-all, not pass-all.</title>
+  </g>
+
+  <!-- Ring buffer bar -->
+  <g class="comp" transform="translate(263,231)">
+    <rect class="box" width="348" height="28" rx="5"
+          fill="#60a5fa" stroke="#1d4ed8" stroke-width="1.5"/>
+    <text x="174" y="18" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">
+      BPF_MAP_TYPE_RINGBUF  (per module)
+    </text>
+    <title>Each module uses a BPF ring buffer per module instance.
+More efficient than perf event arrays:
+- no per-CPU memory waste
+- variable-size records
+- kernel-to-userspace notification via epoll</title>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- Kernel -> Userspace data flow arrow                              -->
+  <!-- ================================================================ -->
+  <line class="flow-line" x1="437" y1="308" x2="437" y2="327"
+        stroke="#374151" stroke-width="2" marker-end="url(#arr-dark)"/>
+  <text x="450" y="321" fill="#6b7280" font-size="10">events</text>
+
+  <!-- ================================================================ -->
+  <!-- USERSPACE SECTION                                                -->
+  <!-- ================================================================ -->
+  <rect x="16" y="329" width="860" height="321" rx="8"
+        fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="30" y="347" class="section-label" fill="#14532d">USERSPACE (Go)</text>
+
+  <!-- ringbuf.Reader -->
+  <g class="comp" transform="translate(277,354)">
+    <rect class="box" width="320" height="28" rx="4"
+          fill="#bbf7d0" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="160" y="18" text-anchor="middle" fill="#14532d" font-size="11">
+      ringbuf.Reader  (cilium/ebpf)
+    </text>
+    <title>Uses cilium/ebpf's ringbuf.Reader.
+Polls the ring buffer fd via epoll and delivers raw
+event bytes as they arrive.
+One reader goroutine per active module.</title>
+  </g>
+  <line x1="437" y1="384" x2="437" y2="400"
+        stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-green)"/>
+
+  <!-- parseEvent -->
+  <g class="comp" transform="translate(277,402)">
+    <rect class="box" width="320" height="28" rx="4"
+          fill="#bbf7d0" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="160" y="18" text-anchor="middle" fill="#14532d" font-size="11">
+      parseEvent  (binary.LittleEndian byte decode)
+    </text>
+    <title>Each module's parseEvent manually decodes raw bytes into a
+typed Go struct (SyscallEvent, FileEvent, etc.) using
+binary.LittleEndian.Uint32/Uint64 with explicit field offsets.
+Not encoding/binary.Read -- fields are extracted by byte position.</title>
+  </g>
+  <line x1="437" y1="432" x2="437" y2="448"
+        stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-green)"/>
+
+  <!-- Userspace predicates -->
+  <g class="comp" transform="translate(237,450)">
+    <rect class="box" width="400" height="28" rx="4"
+          fill="#bbf7d0" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="200" y="18" text-anchor="middle" fill="#14532d" font-size="11">
+      Userspace predicates  (matchesFilter per module)
+    </text>
+    <title>After BPF-level filtering, each module applies Go-side predicates
+for patterns BPF maps cannot express:
+- scheduler: substring match on comm name
+- files: file path prefix / operation type
+Events that do not match are discarded before the sink pipeline.</title>
+  </g>
+  <line x1="437" y1="480" x2="437" y2="496"
+        stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-green)"/>
+
+  <!-- ============================================================== -->
+  <!-- EventSink pipeline box                                         -->
+  <!-- Actual pipeline (outermost to innermost):                      -->
+  <!--   EnrichSink (optional) -> PausableSink -> TextSink|JSONSink   -->
+  <!-- CountSink is a standalone alternative that replaces the above  -->
+  <!-- ============================================================== -->
+  <rect x="26" y="498" width="823" height="137" rx="6"
+        fill="#86efac" stroke="#15803d" stroke-width="1.5"/>
+  <text x="437" y="513" text-anchor="middle" fill="#14532d" font-size="11" font-weight="bold">
+    EventSink pipeline
+  </text>
+
+  <!-- Normal path: EnrichSink* -> PausableSink -> TextSink | JSONSink -->
+
+  <!-- EnrichSink (outermost, optional) -->
+  <g class="sink" transform="translate(36,519)">
+    <rect class="box" width="160" height="58" rx="4"
+          fill="#4ade80" stroke="#15803d" stroke-width="1.5"/>
+    <text x="80" y="17" text-anchor="middle" fill="#14532d" font-size="10" font-weight="bold">EnrichSink*</text>
+    <text x="80" y="29" text-anchor="middle" fill="#166534" font-size="9">(--enrich, optional)</text>
+    <text x="80" y="41" text-anchor="middle" fill="#166534" font-size="9">adds comm, uid name,</text>
+    <text x="80" y="53" text-anchor="middle" fill="#166534" font-size="9">timestamp from /proc</text>
+    <title>Optional outer wrapper, present only when --enrich is specified.
+Adds fields from /proc before passing to PausableSink:
+- comm: /proc/PID/comm
+- resolved username from /etc/passwd
+- timestamp (monotonic or wall clock)
+Enrichment runs before the pause check -- events during interactive
+mode are enriched and then dropped by PausableSink.</title>
+  </g>
+  <line x1="198" y1="548" x2="214" y2="548"
+        stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-green)"/>
+
+  <!-- PausableSink -->
+  <g class="sink" transform="translate(216,519)">
+    <rect class="box" width="160" height="58" rx="4"
+          fill="#4ade80" stroke="#15803d" stroke-width="1.5"/>
+    <text x="80" y="17" text-anchor="middle" fill="#14532d" font-size="10" font-weight="bold">PausableSink</text>
+    <text x="80" y="29" text-anchor="middle" fill="#166534" font-size="9">drops events while</text>
+    <text x="80" y="41" text-anchor="middle" fill="#166534" font-size="9">interactive prompt</text>
+    <text x="80" y="53" text-anchor="middle" fill="#166534" font-size="9">is active (atomic bool)</text>
+    <title>Always wraps the base sink (TextSink or JSONSink).
+When the readline prompt is active, Emit() checks an atomic.Bool
+and drops the event immediately (no blocking, no queue).
+PausableSink.Pause() / Resume() called by the interactive control loop.</title>
+  </g>
+  <line x1="378" y1="548" x2="394" y2="548"
+        stroke="#15803d" stroke-width="1.5" marker-end="url(#arr-green)"/>
+
+  <!-- TextSink -->
+  <g class="sink" transform="translate(396,519)">
+    <rect class="box" width="148" height="58" rx="4"
+          fill="#4ade80" stroke="#15803d" stroke-width="1.5"/>
+    <text x="74" y="17" text-anchor="middle" fill="#14532d" font-size="10" font-weight="bold">TextSink</text>
+    <text x="74" y="29" text-anchor="middle" fill="#166534" font-size="9">key=value lines</text>
+    <text x="74" y="41" text-anchor="middle" fill="#166534" font-size="9">to stdout</text>
+    <text x="74" y="53" text-anchor="middle" fill="#166534" font-size="9">(default)</text>
+    <title>Base sink. Formats each event as key=value pairs on stdout.
+Default output mode (no flag needed).
+Format function is module-specific, dispatched via DispatchTextFormat().</title>
+  </g>
+
+  <!-- "or" label between TextSink and JSONSink -->
+  <text x="550" y="552" text-anchor="middle" fill="#166534" font-size="9" font-style="italic">or</text>
+
+  <!-- JSONSink -->
+  <g class="sink" transform="translate(558,519)">
+    <rect class="box" width="148" height="58" rx="4"
+          fill="#4ade80" stroke="#15803d" stroke-width="1.5"/>
+    <text x="74" y="17" text-anchor="middle" fill="#14532d" font-size="10" font-weight="bold">JSONSink</text>
+    <text x="74" y="29" text-anchor="middle" fill="#166534" font-size="9">NDJSON to stdout</text>
+    <text x="74" y="41" text-anchor="middle" fill="#166534" font-size="9">--output json</text>
+    <text x="74" y="53" text-anchor="middle" fill="#166534" font-size="9">(alternative to Text)</text>
+    <title>Base sink alternative. Marshals each event's field map to a
+JSON object on its own line (NDJSON format).
+Enabled with --output json. Mutually exclusive with TextSink.</title>
+  </g>
+
+  <!-- Divider for CountSink alternative -->
+  <line x1="36" y1="585" x2="843" y2="585"
+        stroke="#15803d" stroke-width="0.8" stroke-dasharray="4 3"/>
+  <text x="46" y="597" fill="#14532d" font-size="9" font-style="italic">
+    OR (--count-only): CountSink replaces the entire pipeline above
+  </text>
+
+  <!-- CountSink (standalone replacement) -->
+  <g class="sink" transform="translate(590,601)">
+    <rect class="box" width="255" height="28" rx="4"
+          fill="#22c55e" stroke="#15803d" stroke-width="1.5"/>
+    <text x="127" y="12" text-anchor="middle" fill="#14532d" font-size="10" font-weight="bold">CountSink  (--count-only)</text>
+    <text x="127" y="23" text-anchor="middle" fill="#166534" font-size="9">aggregate by field, print summary on exit</text>
+    <title>When --count-only is set, sink is replaced entirely by CountSink.
+PausableSink and EnrichSink are NOT in the chain.
+Aggregates event counts keyed by a field (default: comm, overridable with --count-by).
+Prints a sorted top-N summary to stderr on Close().
+CountSink does not stream per-event output.</title>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- Userspace -> Control (signal)                                   -->
+  <!-- ================================================================ -->
+  <line x1="437" y1="651" x2="437" y2="669"
+        stroke="#374151" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arr-dark)"/>
+
+  <!-- ================================================================ -->
+  <!-- CONTROL PLANE                                                    -->
+  <!-- ================================================================ -->
+  <rect x="16" y="671" width="860" height="172" rx="8"
+        fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+  <text x="30" y="688" class="section-label" fill="#78350f">CONTROL PLANE</text>
+
+  <!-- Interactive prompt -->
+  <g class="comp" transform="translate(55,696)">
+    <rect class="box" width="240" height="40" rx="4"
+          fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
+    <text x="120" y="17" text-anchor="middle" fill="#78350f" font-size="10" font-weight="bold">Interactive prompt</text>
+    <text x="120" y="31" text-anchor="middle" fill="#92400e" font-size="9">readline  (tab-complete, BEL on miss)</text>
+    <title>readline-backed REPL. Activated by SIGINT (Ctrl-C) during tracing.
+Tab-completion for commands and map names.
+BEL sound on unrecognised tab input.
+Commands: add, del, list, clear, status, resume, quit.</title>
+  </g>
+
+  <!-- Unix socket server -->
+  <g class="comp" transform="translate(315,696)">
+    <rect class="box" width="260" height="40" rx="4"
+          fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
+    <text x="130" y="17" text-anchor="middle" fill="#78350f" font-size="10" font-weight="bold">Unix socket server</text>
+    <text x="130" y="31" text-anchor="middle" fill="#92400e" font-size="9">/tmp/veil.sock  (veil control add pid 1234)</text>
+    <title>Unix domain socket server running concurrently with tracing.
+Clients send newline-delimited commands and receive responses.
+Socket chmod 0666 so non-root clients can connect.
+Same Handler as interactive mode -- no code duplication.</title>
+  </g>
+
+  <!-- Arrow down to Handler -->
+  <line x1="437" y1="738" x2="437" y2="754"
+        stroke="#d97706" stroke-width="1.5" marker-end="url(#arr-amber)"/>
+
+  <!-- Handler -->
+  <g class="comp" transform="translate(297,756)">
+    <rect class="box" width="280" height="28" rx="4"
+          fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
+    <text x="140" y="18" text-anchor="middle" fill="#78350f" font-size="11" font-weight="bold">control.Handler  (parse + dispatch)</text>
+    <title>Single Handler shared by both transports.
+Parses command strings (add/del/list/clear/status) and delegates to MapUpdater.
+Returns string responses (OK / WARN / ERR).
+Safe to call from concurrent goroutines.</title>
+  </g>
+
+  <!-- Branch annotation -->
+  <text x="437" y="794" text-anchor="middle" fill="#92400e" font-size="9">single module</text>
+  <text x="437" y="804" text-anchor="middle" fill="#92400e" font-size="9">or multi-module</text>
+
+  <!-- Arrow left to single-module updater -->
+  <line x1="390" y1="784" x2="210" y2="800"
+        stroke="#d97706" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#arr-amber)"/>
+
+  <!-- single-module MapUpdater -->
+  <g class="comp" transform="translate(36,802)">
+    <rect class="box" width="320" height="28" rx="4"
+          fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
+    <text x="160" y="18" text-anchor="middle" fill="#78350f" font-size="11" font-weight="bold">module.MapUpdater  (single-module direct)</text>
+    <title>When only one module is active, buildUpdater() returns the
+module's own MapUpdater directly.
+Commands like "add pid 1234" work without a module prefix.
+No compositeUpdater wrapper is created.</title>
+  </g>
+
+  <!-- Arrow right to compositeUpdater -->
+  <line x1="484" y1="784" x2="590" y2="800"
+        stroke="#d97706" stroke-width="1.5" stroke-dasharray="4 2" marker-end="url(#arr-amber)"/>
+
+  <!-- compositeUpdater -->
+  <g class="comp" transform="translate(532,802)">
+    <rect class="box" width="340" height="28" rx="4"
+          fill="#fcd34d" stroke="#b45309" stroke-width="1.5"/>
+    <text x="170" y="18" text-anchor="middle" fill="#78350f" font-size="11" font-weight="bold">compositeUpdater  (routes via mapOwnership)</text>
+    <title>Built only when two or more modules are active.
+A static mapOwnership table routes each map name to owning modules:
+  "pid"    -&gt; all active modules
+  "port"   -&gt; network only
+  "syscall" -&gt; syscall only
+Collects errors from all modules without short-circuiting.</title>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- Control -> Kernel feedback arrow (right side)                   -->
+  <!-- Both updaters write to BPF maps; merge below the boxes at y=836 -->
+  <!-- ================================================================ -->
+  <!-- connector from single-module MapUpdater center-bottom to trunk -->
+  <path class="ctrl-line" d="M 196 830 L 196 836"
+        stroke="#b45309" stroke-width="1.5" fill="none"/>
+  <!-- connector from compositeUpdater center-bottom to trunk -->
+  <path class="ctrl-line" d="M 702 830 L 702 836"
+        stroke="#b45309" stroke-width="1.5" fill="none"/>
+  <!-- trunk: collects both, runs right and up to kernel filter maps -->
+  <path class="ctrl-line" d="M 196 836 L 910 836 L 910 197 L 852 197"
+        stroke="#b45309" stroke-width="1.5" fill="none"
+        marker-end="url(#arr-amber)"/>
+  <text x="928" y="500" text-anchor="middle" fill="#b45309" font-size="10"
+        transform="rotate(90,928,500)">updates BPF filter maps at runtime</text>
+</svg>
