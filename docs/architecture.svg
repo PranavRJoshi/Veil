@@ -30,14 +30,14 @@
   <!-- ================================================================ -->
   <!-- TITLE                                                            -->
   <!-- ================================================================ -->
-  <text x="485" y="26" text-anchor="middle" font-size="17" font-weight="bold" fill="#111827">
+  <text x="446" y="26" text-anchor="middle" font-size="17" font-weight="bold" fill="#111827">
     Veil -- eBPF Observability Architecture
   </text>
 
   <!-- ================================================================ -->
   <!-- MODULE REGISTRY                                                  -->
   <!-- ================================================================ -->
-  <g class="comp" transform="translate(285,36)">
+  <g class="comp" transform="translate(246,36)">
     <rect class="box" width="400" height="30" rx="6"
           fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
     <text x="200" y="19" text-anchor="middle" fill="#4c1d95" font-size="11" font-weight="bold">
@@ -48,7 +48,7 @@ main.go triggers registration with blank imports:
   _ "github.com/PranavRJoshi/Veil/modules/syscall"
 Adding a new module requires no changes to core code.</title>
   </g>
-  <line x1="485" y1="67" x2="485" y2="82"
+  <line x1="446" y1="67" x2="446" y2="82"
         stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arr-purple)"/>
 
   <!-- ================================================================ -->
@@ -327,7 +327,7 @@ CountSink does not stream per-event output.</title>
   <text x="30" y="688" class="section-label" fill="#78350f">CONTROL PLANE</text>
 
   <!-- Interactive prompt -->
-  <g class="comp" transform="translate(55,696)">
+  <g class="comp" transform="translate(167,696)">
     <rect class="box" width="240" height="40" rx="4"
           fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
     <text x="120" y="17" text-anchor="middle" fill="#78350f" font-size="10" font-weight="bold">Interactive prompt</text>
@@ -339,7 +339,7 @@ Commands: add, del, list, clear, status, resume, quit.</title>
   </g>
 
   <!-- Unix socket server -->
-  <g class="comp" transform="translate(315,696)">
+  <g class="comp" transform="translate(457,696)">
     <rect class="box" width="260" height="40" rx="4"
           fill="#fde68a" stroke="#d97706" stroke-width="1.5"/>
     <text x="130" y="17" text-anchor="middle" fill="#78350f" font-size="10" font-weight="bold">Unix socket server</text>
@@ -350,8 +350,10 @@ Socket chmod 0666 so non-root clients can connect.
 Same Handler as interactive mode -- no code duplication.</title>
   </g>
 
-  <!-- Arrow down to Handler -->
-  <line x1="437" y1="738" x2="437" y2="754"
+  <!-- Arrows from both transports converging into Handler -->
+  <line x1="287" y1="736" x2="437" y2="756"
+        stroke="#d97706" stroke-width="1.5" marker-end="url(#arr-amber)"/>
+  <line x1="587" y1="736" x2="437" y2="756"
         stroke="#d97706" stroke-width="1.5" marker-end="url(#arr-amber)"/>
 
   <!-- Handler -->
