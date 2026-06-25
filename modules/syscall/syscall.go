@@ -439,7 +439,6 @@ func (t *TracerModule) Close() error {
 		BPF program or map descriptors.
 	*/
 	t.objs.Close()
-	close(t.Events)
 
 	/*
 		MarkClosed() is a method for BaseProgram stucture. The state must
@@ -501,6 +500,7 @@ func syscallToFields(e events.SyscallEvent) map[string]interface{} {
 	UID, syscall number) have already been applied in the BPF program.
 */
 func (t *TracerModule) poll() {
+	defer close(t.Events)
 	for {
 		record, err := t.reader.Read()
 		if err != nil {

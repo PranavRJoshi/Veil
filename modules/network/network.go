@@ -370,7 +370,6 @@ func (n *NetworkModule) Close() error {
 	}
 
 	n.objs.Close()
-	close(n.Events)
 
 	if err := n.MarkClosed(); err != nil {
 		errs = append(errs, err)
@@ -422,6 +421,7 @@ func networkToFields(e events.NetworkEvent) map[string]interface{} {
 	and sends matching events to the channel.
 */
 func (n *NetworkModule) poll() {
+	defer close(n.Events)
 	for {
 		record, err := n.reader.Read()
 		if err != nil {

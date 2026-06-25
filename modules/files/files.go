@@ -359,7 +359,6 @@ func (f *FilesModule) Close() error {
 	}
 
 	f.objs.Close()
-	close(f.Events)
 
 	if err := f.MarkClosed(); err != nil {
 		closeErrs = append(closeErrs, err)
@@ -407,6 +406,7 @@ func filesToFields(e events.FileEvent) map[string]interface{} {
 }
 
 func (f *FilesModule) poll() {
+	defer close(f.Events)
 	for {
 		record, err := f.reader.Read()
 		if err != nil {

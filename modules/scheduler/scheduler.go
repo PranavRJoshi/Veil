@@ -290,7 +290,6 @@ func (t *SchedulerModule) Close() error {
 	}
 
 	t.objs.Close()
-	close(t.Events)
 
 	if err := t.MarkClosed(); err != nil {
 		errs = append(errs, err)
@@ -338,6 +337,7 @@ func schedulerToFields(e events.SchedulerEvent) map[string]interface{} {
 }
 
 func (t *SchedulerModule) poll() {
+	defer close(t.Events)
 	for {
 		record, err := t.reader.Read()
 		if err != nil {

@@ -326,7 +326,6 @@ func (m *MemoryModule) Close() error {
 	}
 
 	m.objs.Close()
-	close(m.Events)
 
 	if err := m.MarkClosed(); err != nil {
 		errs = append(errs, err)
@@ -366,6 +365,7 @@ func memoryToFields(e events.MemoryEvent) map[string]interface{} {
 }
 
 func (m *MemoryModule) poll() {
+	defer close(m.Events)
 	for {
 		record, err := m.reader.Read()
 		if err != nil {
