@@ -2,8 +2,6 @@ package loader
 
 import (
 	"fmt"
-
-	"github.com/PranavRJoshi/Veil/internal/exterrs"
 )
 
 /*
@@ -105,56 +103,3 @@ func (b *BaseProgram) MarkClosed() error {
 	return nil
 }
 
-/*
-	A Manager owns a collection of Program interface and drives their lifecycle.
-*/
-type Manager struct {
-	programs []Program
-}
-
-/*
-	A "constructor" for Manager structure. Returns a pointer to Manager
-	structure.
-*/
-func NewManager() *Manager {
-	return &Manager{}
-}
-
-/*
-	Append the Program p to the array on Manager.
-	A "pointer receiver" method since we need to modify the object
-	representing the Manager type.
-*/
-func (m *Manager) Register(p Program) {
-	m.programs = append(m.programs, p)
-}
-
-/*
-	Load all registered programs. If error is encountered,
-	return preemptively.
-*/
-func (m *Manager) LoadAll() error {
-	for _, p := range m.programs {
-		if err := p.Load(); err != nil {
-			return fmt.Errorf("loadall: %w", err)
-		}
-	}
-	return nil
-}
-
-/*
-	Close all loaded programs. For every closed programs, if an error occurs,
-	collect it using append and call joinErrors for the appended errors.
-*/
-func (m *Manager) CloseAll() error {
-	var close_errs []error
-	for _, p := range m.programs {
-		if p.State() != StateLoaded {
-			continue
-		}
-		if err := p.Close(); err != nil {
-			close_errs = append(close_errs, err)
-		}
-	}
-	return exterrs.Join(close_errs)
-}

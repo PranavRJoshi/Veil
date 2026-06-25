@@ -1,7 +1,6 @@
 package loader
 
 import (
-	"errors"
 	"testing"
 )
 
@@ -64,78 +63,3 @@ func TestStateMachine(t *testing.T) {
 	}
 }
 
-/*
-	Test for Manager structure.
-*/
-func TestManagerLoadAll(t *testing.T) {
-	/* Allocate memory for Manager structure */
-	m := NewManager()
-
-	/* Register programs */
-	m.Register(newStub("prog_a", nil))
-	m.Register(newStub("prog_b", nil))
-
-	/*
-		The LoadAll() method internally also calls the Load() method
-		that is defined for Program interface. Only two elements are
-		defined above. The Load() method is defined above.
-
-		If non-nil value is present for loadErr, that is returned,
-		else MarkLoaded() method will be called. This method will
-		return nil only when state is not StateUnloaded.
-	*/
-	if err := m.LoadAll(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-/*
-	Test for ManagerLoadAll where one of the element of Program interface
-	does not have nil for loadErr field on stubProgram.
-*/
-func TestManagerLoadAllStopsOnError(t *testing.T) {
-	sentinel := errors.New("load failed")
-
-	m := NewManager()
-	m.Register(newStub("prog_a", nil))
-	/* registers the error that we defined above */
-	m.Register(newStub("prog_b", sentinel))
-
-	err := m.LoadAll()
-	/* LoadAll will return the error, as expected. */
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	/*
-		Ensure that the error returned is the one defined for sentinel,
-		"load failed".
-
-		error.Is walks the wrap chain, %w we used in LoadAll will implement
-		the Unwrap method for the error interface.
-	*/
-	if !errors.Is(err, sentinel) {
-		t.Errorf("expected sentinel error in chain, got %v", err)
-	}
-}
-
-/*
-	Test for ManagerCloseAll.
-*/
-func TestManagerCloseAllContinuesOnError(t *testing.T) {
-	m := NewManager()
-	m.Register(newStub("prog_a", nil))
-	m.Register(newStub("prog_b", nil))
-
-	_ = m.LoadAll()
-
-	/*
-		CloseAll method internally calls Close method when state is StateLoaded,
-		which is defined above. Close method calls MarkClosed method.
-
-		Unless state is StateLoaded, MarkClosed method returns non-nil.
-	*/
-	if err := m.CloseAll(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
