@@ -290,24 +290,3 @@ func TestFilesToFields_AllFieldsPresent(t *testing.T) {
 		t.Errorf("kind = %v, want 'file access'", f["kind"])
 	}
 }
-
-// ---------------------------------------------------------------------------
-// fmtKeys
-// ---------------------------------------------------------------------------
-
-func TestFmtKeys(t *testing.T) {
-	cases := []struct {
-		keys []uint64
-		want string
-	}{
-		{nil, "[]"},
-		{[]uint64{}, "[]"},
-		{[]uint64{42}, "[42]"},
-		{[]uint64{1, 2, 3}, "[1,2,3]"},
-	}
-	for _, c := range cases {
-		if got := fmtKeys(c.keys); got != c.want {
-			t.Errorf("fmtKeys(%v) = %q, want %q", c.keys, got, c.want)
-		}
-	}
-}

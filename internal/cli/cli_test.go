@@ -4,7 +4,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/PranavRJoshi/Veil/internal/runner"
 )
 
 /*
@@ -16,17 +18,17 @@ func TestMain(m *testing.M) {
 	registry.Register(registry.ModuleInfo{
 		Name:        "syscall",
 		Description: "test syscall module",
-		Factory:     func(map[string]string, interface{}) (interface{}, error) { return nil, nil },
+		Factory:     func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
 	})
 	registry.Register(registry.ModuleInfo{
 		Name:        "files",
 		Description: "test files module",
-		Factory:     func(map[string]string, interface{}) (interface{}, error) { return nil, nil },
+		Factory:     func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
 	})
 	registry.Register(registry.ModuleInfo{
 		Name:        "network",
 		Description: "test network module",
-		Factory:     func(map[string]string, interface{}) (interface{}, error) { return nil, nil },
+		Factory:     func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
 	})
 	os.Exit(m.Run())
 }

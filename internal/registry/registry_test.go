@@ -2,6 +2,9 @@ package registry
 
 import (
 	"testing"
+
+	"github.com/PranavRJoshi/Veil/internal/output"
+	"github.com/PranavRJoshi/Veil/internal/runner"
 )
 
 func TestRegisterAndGet(t *testing.T) {
@@ -14,8 +17,8 @@ func TestRegisterAndGet(t *testing.T) {
 		Flags: []FlagDef{
 			{Name: "pid", Short: "p", Description: "filter by PID"},
 		},
-		Factory: func(flags map[string]string, sink interface{}) (interface{}, error) {
-			return "fake-module", nil
+		Factory: func(flags map[string]string, sink output.EventSink) (runner.Module, error) {
+			return nil, nil
 		},
 	}
 	Register(info)
@@ -46,7 +49,7 @@ func TestDuplicatePanics(t *testing.T) {
 	Reset()
 	defer Reset()
 
-	info := ModuleInfo{Name: "dup", Factory: func(map[string]string, interface{}) (interface{}, error) { return nil, nil }}
+	info := ModuleInfo{Name: "dup", Factory: func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil }}
 	Register(info)
 
 	defer func() {
@@ -64,7 +67,7 @@ func TestNamesSorted(t *testing.T) {
 	for _, n := range []string{"network", "files", "syscall"} {
 		Register(ModuleInfo{
 			Name:    n,
-			Factory: func(map[string]string, interface{}) (interface{}, error) { return nil, nil },
+			Factory: func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
 		})
 	}
 	names := Names()
@@ -73,6 +76,28 @@ func TestNamesSorted(t *testing.T) {
 	}
 	if names[0] != "files" || names[1] != "network" || names[2] != "syscall" {
 		t.Errorf("names not sorted: %v", names)
+	}
+}
+
+func TestMapNamesRoundTrip(t *testing.T) {
+	Reset()
+	defer Reset()
+
+	Register(ModuleInfo{
+		Name:     "syscall",
+		MapNames: []string{"pid", "uid", "syscall"},
+		Factory:  func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
+	})
+
+	got, ok := Get("syscall")
+	if !ok {
+		t.Fatal("Get returned false")
+	}
+	if len(got.MapNames) != 3 {
+		t.Fatalf("MapNames len = %d, want 3", len(got.MapNames))
+	}
+	if got.MapNames[0] != "pid" || got.MapNames[1] != "uid" || got.MapNames[2] != "syscall" {
+		t.Errorf("MapNames = %v, want [pid uid syscall]", got.MapNames)
 	}
 }
 
@@ -87,7 +112,7 @@ func TestAllFlags_Deduplicated(t *testing.T) {
 			{Name: "pid", Short: "p"},
 			{Name: "uid", Short: "u"},
 		},
-		Factory: func(map[string]string, interface{}) (interface{}, error) { return nil, nil },
+		Factory: func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
 	})
 	Register(ModuleInfo{
 		Name: "b",
@@ -95,7 +120,7 @@ func TestAllFlags_Deduplicated(t *testing.T) {
 			{Name: "pid", Short: "p"},
 			{Name: "port"},
 		},
-		Factory: func(map[string]string, interface{}) (interface{}, error) { return nil, nil },
+		Factory: func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
 	})
 
 	flags := AllFlags()
