@@ -2,15 +2,12 @@ package files
 
 /*
 	MapUpdater implementation for the files module.
-	NOTE: Refer to modules/syscall/map_updater.go for additional
-	information since the implementations are mostly identical.
 
-	Wraps PidFilter and UidFilter BPF maps with live update, delete,
-	list, and clear operations. Manages the filter_cfg bitmask to
-	ensure consistency between map contents and filter activation.
+	Wraps PidFilter, UidFilter, and their deny variants with live update,
+	delete, list, and clear operations via bpfutil.
 
-	Supported map names: "pid", "uid"
-	Key types: pid=uint32, uid=uint32
+	Supported map names: pid, uid, pid_deny, uid_deny
+	Key types: all uint32
 
 	Bitmask convention:
 		bit 0 = pid_filter active
@@ -22,218 +19,119 @@ package files
 
 import (
 	"fmt"
-	"strings"
-	"sync"
 
-	"github.com/cilium/ebpf"
+	"github.com/PranavRJoshi/Veil/internal/bpfutil"
 )
 
-type filterMeta struct {
-	bpfMap *ebpf.Map
-	bit    uint32
-}
-
-type mapUpdaterState struct {
-	mu      sync.Mutex
-	filters map[string]filterMeta
-	cfgMap  *ebpf.Map
-}
-
 func (f *FilesModule) initMapUpdater() {
-	f.updater = &mapUpdaterState{
-		filters: map[string]filterMeta{
+	f.updater = &bpfutil.MapUpdaterState{
+		Filters: map[string]bpfutil.FilterMeta{
 			"pid": {
-				bpfMap: f.objs.PidFilter,
-				bit:    1,
+				BpfMap:  f.objs.PidFilter,
+				Bit:     1,
+				KeySize: 4,
 			},
 			"uid": {
-				bpfMap: f.objs.UidFilter,
-				bit:    2,
+				BpfMap:  f.objs.UidFilter,
+				Bit:     2,
+				KeySize: 4,
 			},
 			"pid_deny": {
-				bpfMap: f.objs.PidDeny,
-				bit:    8,
+				BpfMap:  f.objs.PidDeny,
+				Bit:     8,
+				KeySize: 4,
 			},
 			"uid_deny": {
-				bpfMap: f.objs.UidDeny,
-				bit:    16,
+				BpfMap:  f.objs.UidDeny,
+				Bit:     16,
+				KeySize: 4,
 			},
 		},
-		cfgMap: f.objs.FilterCfg,
+		CfgMap: f.objs.FilterCfg,
 	}
 }
 
 func (f *FilesModule) AddFilter(mapName string, key uint64) error {
-	f.updater.mu.Lock()
-	defer f.updater.mu.Unlock()
+	f.updater.Mu.Lock()
+	defer f.updater.Mu.Unlock()
 
-	meta, ok := f.updater.filters[mapName]
+	meta, ok := f.updater.Filters[mapName]
 	if !ok {
 		return fmt.Errorf("files: unknown filter map %q (valid: pid, uid)", mapName)
 	}
 
-	k := uint32(key)
-	enable := uint8(1)
-	if err := meta.bpfMap.Update(k, enable, ebpf.UpdateAny); err != nil {
+	if err := bpfutil.UpdateMapKey(meta.BpfMap, key, 1, meta.KeySize); err != nil {
 		return fmt.Errorf("files: add %s filter %d: %w", mapName, key, err)
 	}
 
-	return f.updater.setBit(meta.bit)
+	return f.updater.SetBit(meta.Bit)
 }
 
 func (f *FilesModule) DelFilter(mapName string, key uint64) error {
-	f.updater.mu.Lock()
-	defer f.updater.mu.Unlock()
+	f.updater.Mu.Lock()
+	defer f.updater.Mu.Unlock()
 
-	meta, ok := f.updater.filters[mapName]
+	meta, ok := f.updater.Filters[mapName]
 	if !ok {
 		return fmt.Errorf("files: unknown filter map %q (valid: pid, uid)", mapName)
 	}
 
-	/* Verify that the key exists before attempting deletion */
-	k := uint32(key)
-	var val uint8
-	if err := meta.bpfMap.Lookup(k, &val); err != nil {
+	if !bpfutil.LookupMapKey(meta.BpfMap, key, meta.KeySize) {
 		return fmt.Errorf("files: key %d not found in %s filter", key, mapName)
 	}
 
-	if err := meta.bpfMap.Delete(k); err != nil {
+	if err := bpfutil.DeleteMapKey(meta.BpfMap, key, meta.KeySize); err != nil {
 		return fmt.Errorf("files: del %s filter %d: %w", mapName, key, err)
 	}
 
-	empty, err := isMapEmpty(meta.bpfMap)
+	empty, err := bpfutil.IsMapEmpty(meta.BpfMap, meta.KeySize)
 	if err != nil {
 		return fmt.Errorf("files: check %s empty: %w", mapName, err)
 	}
 	if empty {
-		return f.updater.clearBit(meta.bit)
+		return f.updater.ClearBit(meta.Bit)
 	}
 
 	return nil
 }
 
 func (f *FilesModule) ListFilters(mapName string) ([]uint64, error) {
-	f.updater.mu.Lock()
-	defer f.updater.mu.Unlock()
+	f.updater.Mu.Lock()
+	defer f.updater.Mu.Unlock()
 
-	meta, ok := f.updater.filters[mapName]
+	meta, ok := f.updater.Filters[mapName]
 	if !ok {
 		return nil, fmt.Errorf("files: unknown filter map %q (valid: pid, uid)", mapName)
 	}
 
-	return iterateMap32(meta.bpfMap)
+	return bpfutil.IterateMapKeys(meta.BpfMap, meta.KeySize)
 }
 
 func (f *FilesModule) ClearFilters(mapName string) error {
-	f.updater.mu.Lock()
-	defer f.updater.mu.Unlock()
+	f.updater.Mu.Lock()
+	defer f.updater.Mu.Unlock()
 
-	meta, ok := f.updater.filters[mapName]
+	meta, ok := f.updater.Filters[mapName]
 	if !ok {
 		return fmt.Errorf("files: unknown filter map %q (valid: pid, uid)", mapName)
 	}
 
-	if err := clearMap32(meta.bpfMap); err != nil {
+	if err := bpfutil.ClearAllKeys(meta.BpfMap, meta.KeySize); err != nil {
 		return fmt.Errorf("files: clear %s: %w", mapName, err)
 	}
 
-	return f.updater.clearBit(meta.bit)
+	return f.updater.ClearBit(meta.Bit)
 }
 
 func (f *FilesModule) Status() string {
-	f.updater.mu.Lock()
-	defer f.updater.mu.Unlock()
+	f.updater.Mu.Lock()
+	defer f.updater.Mu.Unlock()
 
-	pids, _ := iterateMap32(f.updater.filters["pid"].bpfMap)
-	uids, _ := iterateMap32(f.updater.filters["uid"].bpfMap)
-	pidDeny, _ := iterateMap32(f.updater.filters["pid_deny"].bpfMap)
-	uidDeny, _ := iterateMap32(f.updater.filters["uid_deny"].bpfMap)
+	pids, _ := bpfutil.IterateMapKeys(f.updater.Filters["pid"].BpfMap, 4)
+	uids, _ := bpfutil.IterateMapKeys(f.updater.Filters["uid"].BpfMap, 4)
+	pidDeny, _ := bpfutil.IterateMapKeys(f.updater.Filters["pid_deny"].BpfMap, 4)
+	uidDeny, _ := bpfutil.IterateMapKeys(f.updater.Filters["uid_deny"].BpfMap, 4)
 
 	return fmt.Sprintf("files: loaded, filters: pid=%s, uid=%s, pid_deny=%s, uid_deny=%s",
-		fmtKeys(pids), fmtKeys(uids), fmtKeys(pidDeny), fmtKeys(uidDeny))
-}
-
-// ---------------------------------------------------------------------------
-// filter_cfg bitmask helpers
-// ---------------------------------------------------------------------------
-
-func (s *mapUpdaterState) setBit(bit uint32) error {
-	mask, _ := s.readCfg()
-	if mask&bit != 0 {
-		return nil
-	}
-	mask |= bit
-
-	return s.writeCfg(mask)
-}
-
-func (s *mapUpdaterState) clearBit(bit uint32) error {
-	mask, _ := s.readCfg()
-	if mask&bit == 0 {
-		return nil
-	}
-	mask &^= bit
-
-	return s.writeCfg(mask)
-}
-
-func (s *mapUpdaterState) readCfg() (uint32, error) {
-	cfgKey := uint32(0)
-	var mask uint32
-	if err := s.cfgMap.Lookup(cfgKey, &mask); err != nil {
-		return 0, nil
-	}
-
-	return mask, nil
-}
-
-func (s *mapUpdaterState) writeCfg(mask uint32) error {
-	cfgKey := uint32(0)
-
-	return s.cfgMap.Update(cfgKey, mask, ebpf.UpdateAny)
-}
-
-// ---------------------------------------------------------------------------
-// BPF map helpers (all maps in files use uint32 keys)
-// ---------------------------------------------------------------------------
-
-func iterateMap32(m *ebpf.Map) ([]uint64, error) {
-	var keys []uint64
-	var key uint32
-	var val uint8
-
-	iter := m.Iterate()
-	for iter.Next(&key, &val) {
-		keys = append(keys, uint64(key))
-	}
-
-	return keys, iter.Err()
-}
-
-func isMapEmpty(m *ebpf.Map) (bool, error) {
-	keys, err := iterateMap32(m)
-	if err != nil {
-		return false, err
-	}
-
-	return len(keys) == 0, nil
-}
-
-func clearMap32(m *ebpf.Map) error {
-	keys, err := iterateMap32(m)
-	if err != nil {
-		return err
-	}
-	for _, k := range keys {
-		key := uint32(k)
-		if err := m.Delete(key); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func fmtKeys(keys []uint64) string {
-	return strings.ReplaceAll(fmt.Sprintf("%v", keys), " ", ",")
+		bpfutil.FmtKeys(pids), bpfutil.FmtKeys(uids), bpfutil.FmtKeys(pidDeny), bpfutil.FmtKeys(uidDeny))
 }

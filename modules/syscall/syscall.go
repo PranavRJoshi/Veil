@@ -31,11 +31,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/PranavRJoshi/Veil/internal/bpfutil"
 	"github.com/PranavRJoshi/Veil/internal/events"
 	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/loader"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/PranavRJoshi/Veil/internal/runner"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
@@ -58,11 +60,8 @@ func init() {
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
 			{Name: "syscall", Short: "s", Description: "Filter by syscall name (comma-separated)", HasValue: true},
 		},
-		Factory: func(flags map[string]string, sinkIface interface{}) (interface{}, error) {
-			sink, ok := sinkIface.(output.EventSink)
-			if !ok {
-				return nil, fmt.Errorf("syscall: expected output.EventSink, got %T", sinkIface)
-			}
+		MapNames: []string{"pid", "uid", "syscall", "pid_deny", "uid_deny", "syscall_deny"},
+		Factory: func(flags map[string]string, sink output.EventSink) (runner.Module, error) {
 			filter, err := ParseFilterConfig(flags)
 			if err != nil {
 				return nil, err
@@ -172,7 +171,7 @@ type TracerModule struct {
 	Events              chan events.SyscallEvent /* userspace consumes from this channel */
 	filter              FilterConfig             /* parsed filter configuration */
 	sink                output.EventSink         /* output sink for formatted event emission */
-	updater             *mapUpdaterState         /* runtime filter control (interactive or control socket) */
+	updater             *bpfutil.MapUpdaterState /* runtime filter control (interactive or control socket) */
 }
 
 /*

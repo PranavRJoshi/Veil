@@ -62,4 +62,3 @@ func TestStateMachine(t *testing.T) {
 		t.Fatal("expected error on double load, got nil")
 	}
 }
-

@@ -106,11 +106,21 @@ func (f *fakeMapUpdater) count(mapName string) int {
 func makeComposite() (*compositeUpdater, *fakeMapUpdater, *fakeMapUpdater) {
 	syscallU := newFakeMapUpdater("syscall", "pid", "uid", "syscall", "pid_deny", "uid_deny", "syscall_deny")
 	networkU := newFakeMapUpdater("network", "pid", "uid", "port", "pid_deny", "uid_deny", "port_deny")
+
+	fakes := map[string]*fakeMapUpdater{"syscall": syscallU, "network": networkU}
+	ownership := make(map[string][]string)
+	for modName, fu := range fakes {
+		for mapName := range fu.maps {
+			ownership[mapName] = append(ownership[mapName], modName)
+		}
+	}
+
 	c := &compositeUpdater{
 		updaters: map[string]control.MapUpdater{
 			"syscall": syscallU,
 			"network": networkU,
 		},
+		mapOwnership: ownership,
 	}
 	return c, syscallU, networkU
 }

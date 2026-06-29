@@ -19,11 +19,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/PranavRJoshi/Veil/internal/bpfutil"
 	"github.com/PranavRJoshi/Veil/internal/events"
 	"github.com/PranavRJoshi/Veil/internal/exterrs"
 	"github.com/PranavRJoshi/Veil/internal/loader"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/PranavRJoshi/Veil/internal/runner"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
@@ -39,11 +41,8 @@ func init() {
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
 			{Name: "fault", Short: "", Description: "Filter by fault type: major, minor (comma-separated)", HasValue: true},
 		},
-		Factory: func(flags map[string]string, sinkIface interface{}) (interface{}, error) {
-			sink, ok := sinkIface.(output.EventSink)
-			if !ok {
-				return nil, fmt.Errorf("memory: expected output.EventSink, got %T", sinkIface)
-			}
+		MapNames: []string{"pid", "uid", "fault", "pid_deny", "uid_deny", "fault_deny"},
+		Factory: func(flags map[string]string, sink output.EventSink) (runner.Module, error) {
 			filter, err := ParseFilterConfig(flags)
 			if err != nil {
 				return nil, err
@@ -169,7 +168,7 @@ type MemoryModule struct {
 	Events      chan events.MemoryEvent
 	filter      FilterConfig
 	sink        output.EventSink
-	updater     *mapUpdaterState
+	updater     *bpfutil.MapUpdaterState
 }
 
 func New(filter FilterConfig, sink output.EventSink) *MemoryModule {

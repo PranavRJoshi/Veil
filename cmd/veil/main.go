@@ -182,17 +182,9 @@ func main() {
 	for _, name := range moduleNames {
 		info, _ := registry.Get(name) /* already validated by CLI */
 
-		modIface, err := info.Factory(cfg.ModuleFlags, sink)
+		mod, err := info.Factory(cfg.ModuleFlags, sink)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error creating module: %v\n", err)
-			os.Exit(1)
-		}
-
-		mod, ok := modIface.(runner.Module)
-		if !ok {
-			fmt.Fprintf(os.Stderr,
-				"module %s does not implement runner.Module\n",
-				name)
 			os.Exit(1)
 		}
 		modules = append(modules, mod)
@@ -380,7 +372,14 @@ func buildUpdater(modules []runner.Module, names []string) control.MapUpdater {
 		}
 	}
 
-	return &compositeUpdater{updaters: updaters}
+	ownership := make(map[string][]string)
+	for _, info := range registry.All() {
+		for _, mapName := range info.MapNames {
+			ownership[mapName] = append(ownership[mapName], info.Name)
+		}
+	}
+
+	return &compositeUpdater{updaters: updaters, mapOwnership: ownership}
 }
 
 /*
@@ -398,27 +397,8 @@ func buildUpdater(modules []runner.Module, names []string) control.MapUpdater {
 		The Handler builds these from 4-part commands (see HandleCommand())
 */
 type compositeUpdater struct {
-	updaters map[string]control.MapUpdater
-}
-
-/*
-	mapOwnership defines which modules own which map names.
-	"pid" and "uid" are universal--all modules have them.
-	"syscall" is syscall-only, "port" is network-only.
-*/
-var mapOwnership = map[string][]string{
-	"pid":          {"syscall", "files", "network", "scheduler", "memory"},
-	"uid":          {"syscall", "files", "network", "scheduler", "memory"},
-	"syscall":      {"syscall"},
-	"port":         {"network"},
-	"cpu":          {"scheduler"},
-	"fault":        {"memory"},
-	"pid_deny":     {"syscall", "files", "network", "scheduler", "memory"},
-	"uid_deny":     {"syscall", "files", "network", "scheduler", "memory"},
-	"syscall_deny": {"syscall"},
-	"port_deny":    {"network"},
-	"cpu_deny":     {"scheduler"},
-	"fault_deny":   {"memory"},
+	updaters     map[string]control.MapUpdater
+	mapOwnership map[string][]string
 }
 
 /*
@@ -447,7 +427,7 @@ func (c *compositeUpdater) resolveTargets(mapName string) (targets []string, rea
 	}
 
 	/* Plain map name: route via ownership, restricted to loaded modules */
-	owners, ok := mapOwnership[mapName]
+	owners, ok := c.mapOwnership[mapName]
 	if !ok {
 		return nil, "", fmt.Errorf("unknown filter map %q (use help)", mapName)
 	}

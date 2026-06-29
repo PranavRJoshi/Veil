@@ -102,4 +102,3 @@ func (b *BaseProgram) MarkClosed() error {
 	b.state = StateClosed
 	return nil
 }
-

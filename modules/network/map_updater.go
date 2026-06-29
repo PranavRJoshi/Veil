@@ -2,20 +2,11 @@ package network
 
 /*
 	MapUpdater implementation for the network module.
-	NOTE: Refer to modules/syscall/map_updater.go for additional
-	information since the implementations are mostly identical.
 
-	Wraps PidFilter, UidFilter, PortFilter, PidDeny, UidDeny, and PortDeny
-	BPF maps with live update, delete, list, and clear operations. Manages the
-	filter_cfg bitmask to ensure consistency.
+	Wraps PidFilter, UidFilter, PortFilter, and their deny variants with
+	live update, delete, list, and clear operations via bpfutil.
 
-	Supported map names:
-		1. pid
-		2. uid
-		3. port
-		4. pid_deny
-		5. uid_deny
-		6. port_deny
+	Supported map names: pid, uid, port, pid_deny, uid_deny, port_deny
 	Key types: pid=uint32, uid=uint32, port=uint16
 
 	Bitmask convention:
@@ -29,284 +20,132 @@ package network
 
 import (
 	"fmt"
-	"strings"
-	"sync"
 
-	"github.com/cilium/ebpf"
+	"github.com/PranavRJoshi/Veil/internal/bpfutil"
 )
 
-type filterMeta struct {
-	bpfMap  *ebpf.Map
-	bit     uint32
-	keySize int /* 2 for uint16 (port), 4 for uint32 (pid/uid) */
-}
-
-type mapUpdaterState struct {
-	mu      sync.Mutex
-	filters map[string]filterMeta
-	cfgMap  *ebpf.Map
-}
-
 func (n *NetworkModule) initMapUpdater() {
-	n.updater = &mapUpdaterState{
-		filters: map[string]filterMeta{
+	n.updater = &bpfutil.MapUpdaterState{
+		Filters: map[string]bpfutil.FilterMeta{
 			"pid": {
-				bpfMap:  n.objs.PidFilter,
-				bit:     1,
-				keySize: 4,
+				BpfMap:  n.objs.PidFilter,
+				Bit:     1,
+				KeySize: 4,
 			},
 			"uid": {
-				bpfMap:  n.objs.UidFilter,
-				bit:     2,
-				keySize: 4,
+				BpfMap:  n.objs.UidFilter,
+				Bit:     2,
+				KeySize: 4,
 			},
 			"port": {
-				bpfMap:  n.objs.PortFilter,
-				bit:     4,
-				keySize: 2,
+				BpfMap:  n.objs.PortFilter,
+				Bit:     4,
+				KeySize: 2,
 			},
 			"pid_deny": {
-				bpfMap:  n.objs.PidDeny,
-				bit:     8,
-				keySize: 4,
+				BpfMap:  n.objs.PidDeny,
+				Bit:     8,
+				KeySize: 4,
 			},
 			"uid_deny": {
-				bpfMap:  n.objs.UidDeny,
-				bit:     16,
-				keySize: 4,
+				BpfMap:  n.objs.UidDeny,
+				Bit:     16,
+				KeySize: 4,
 			},
 			"port_deny": {
-				bpfMap:  n.objs.PortDeny,
-				bit:     32,
-				keySize: 2,
+				BpfMap:  n.objs.PortDeny,
+				Bit:     32,
+				KeySize: 2,
 			},
 		},
-		cfgMap: n.objs.FilterCfg,
+		CfgMap: n.objs.FilterCfg,
 	}
 }
 
 func (n *NetworkModule) AddFilter(mapName string, key uint64) error {
-	n.updater.mu.Lock()
-	defer n.updater.mu.Unlock()
+	n.updater.Mu.Lock()
+	defer n.updater.Mu.Unlock()
 
-	meta, ok := n.updater.filters[mapName]
+	meta, ok := n.updater.Filters[mapName]
 	if !ok {
 		return fmt.Errorf("network: unknown filter map %q (valid: pid, uid, port)", mapName)
 	}
 
-	enable := uint8(1)
-	if err := updateKey(meta.bpfMap, key, enable, meta.keySize); err != nil {
+	if err := bpfutil.UpdateMapKey(meta.BpfMap, key, 1, meta.KeySize); err != nil {
 		return fmt.Errorf("network: add %s filter %d: %w", mapName, key, err)
 	}
 
-	return n.updater.setBit(meta.bit)
+	return n.updater.SetBit(meta.Bit)
 }
 
 func (n *NetworkModule) DelFilter(mapName string, key uint64) error {
-	n.updater.mu.Lock()
-	defer n.updater.mu.Unlock()
+	n.updater.Mu.Lock()
+	defer n.updater.Mu.Unlock()
 
-	meta, ok := n.updater.filters[mapName]
+	meta, ok := n.updater.Filters[mapName]
 	if !ok {
 		return fmt.Errorf("network: unknown filter map %q (valid: pid, uid, port)", mapName)
 	}
 
-	/* Verify the key exists before attempting deletion */
-	if !lookupKey(meta.bpfMap, key, meta.keySize) {
+	if !bpfutil.LookupMapKey(meta.BpfMap, key, meta.KeySize) {
 		return fmt.Errorf("network: key %d not found in %s filter", key, mapName)
 	}
 
-	if err := deleteKey(meta.bpfMap, key, meta.keySize); err != nil {
+	if err := bpfutil.DeleteMapKey(meta.BpfMap, key, meta.KeySize); err != nil {
 		return fmt.Errorf("network: del %s filter %d: %w", mapName, key, err)
 	}
 
-	empty, err := isMapEmpty(meta.bpfMap, meta.keySize)
+	empty, err := bpfutil.IsMapEmpty(meta.BpfMap, meta.KeySize)
 	if err != nil {
 		return fmt.Errorf("network: check %s empty: %w", mapName, err)
 	}
 	if empty {
-		return n.updater.clearBit(meta.bit)
+		return n.updater.ClearBit(meta.Bit)
 	}
 
 	return nil
 }
 
 func (n *NetworkModule) ListFilters(mapName string) ([]uint64, error) {
-	n.updater.mu.Lock()
-	defer n.updater.mu.Unlock()
+	n.updater.Mu.Lock()
+	defer n.updater.Mu.Unlock()
 
-	meta, ok := n.updater.filters[mapName]
+	meta, ok := n.updater.Filters[mapName]
 	if !ok {
 		return nil, fmt.Errorf("network: unknown filter map %q (valid: pid, uid, port)", mapName)
 	}
 
-	return iterateKeys(meta.bpfMap, meta.keySize)
+	return bpfutil.IterateMapKeys(meta.BpfMap, meta.KeySize)
 }
 
 func (n *NetworkModule) ClearFilters(mapName string) error {
-	n.updater.mu.Lock()
-	defer n.updater.mu.Unlock()
+	n.updater.Mu.Lock()
+	defer n.updater.Mu.Unlock()
 
-	meta, ok := n.updater.filters[mapName]
+	meta, ok := n.updater.Filters[mapName]
 	if !ok {
 		return fmt.Errorf("network: unknown filter map %q (valid: pid, uid, port)", mapName)
 	}
 
-	if err := clearAll(meta.bpfMap, meta.keySize); err != nil {
+	if err := bpfutil.ClearAllKeys(meta.BpfMap, meta.KeySize); err != nil {
 		return fmt.Errorf("network: clear %s: %w", mapName, err)
 	}
 
-	return n.updater.clearBit(meta.bit)
+	return n.updater.ClearBit(meta.Bit)
 }
 
 func (n *NetworkModule) Status() string {
-	n.updater.mu.Lock()
-	defer n.updater.mu.Unlock()
+	n.updater.Mu.Lock()
+	defer n.updater.Mu.Unlock()
 
-	pids, _ := iterateKeys(n.updater.filters["pid"].bpfMap, 4)
-	uids, _ := iterateKeys(n.updater.filters["uid"].bpfMap, 4)
-	ports, _ := iterateKeys(n.updater.filters["port"].bpfMap, 2)
-	pidDeny, _ := iterateKeys(n.updater.filters["pid_deny"].bpfMap, 4)
-	uidDeny, _ := iterateKeys(n.updater.filters["uid_deny"].bpfMap, 4)
-	portDeny, _ := iterateKeys(n.updater.filters["port_deny"].bpfMap, 2)
+	pids, _ := bpfutil.IterateMapKeys(n.updater.Filters["pid"].BpfMap, 4)
+	uids, _ := bpfutil.IterateMapKeys(n.updater.Filters["uid"].BpfMap, 4)
+	ports, _ := bpfutil.IterateMapKeys(n.updater.Filters["port"].BpfMap, 2)
+	pidDeny, _ := bpfutil.IterateMapKeys(n.updater.Filters["pid_deny"].BpfMap, 4)
+	uidDeny, _ := bpfutil.IterateMapKeys(n.updater.Filters["uid_deny"].BpfMap, 4)
+	portDeny, _ := bpfutil.IterateMapKeys(n.updater.Filters["port_deny"].BpfMap, 2)
 
 	return fmt.Sprintf("network: loaded, filters: pid=%s, uid=%s, port=%s, pid_deny=%s, uid_deny=%s, port_deny=%s",
-		fmtKeys(pids), fmtKeys(uids), fmtKeys(ports), fmtKeys(pidDeny), fmtKeys(uidDeny), fmtKeys(portDeny))
-}
-
-// ---------------------------------------------------------------------------
-// filter_cfg bitmask helpers
-// ---------------------------------------------------------------------------
-
-func (s *mapUpdaterState) setBit(bit uint32) error {
-	mask, _ := s.readCfg()
-	if mask&bit != 0 {
-		return nil
-	}
-	mask |= bit
-
-	return s.writeCfg(mask)
-}
-
-func (s *mapUpdaterState) clearBit(bit uint32) error {
-	mask, _ := s.readCfg()
-	if mask&bit == 0 {
-		return nil
-	}
-	mask &^= bit
-
-	return s.writeCfg(mask)
-}
-
-func (s *mapUpdaterState) readCfg() (uint32, error) {
-	cfgKey := uint32(0)
-	var mask uint32
-	if err := s.cfgMap.Lookup(cfgKey, &mask); err != nil {
-		return 0, nil
-	}
-
-	return mask, nil
-}
-
-func (s *mapUpdaterState) writeCfg(mask uint32) error {
-	cfgKey := uint32(0)
-
-	return s.cfgMap.Update(cfgKey, mask, ebpf.UpdateAny)
-}
-
-// ---------------------------------------------------------------------------
-// BPF map helpers
-//
-// The network module has three key sizes: uint16 (port), uint32 (pid/uid).
-// ---------------------------------------------------------------------------
-
-func updateKey(m *ebpf.Map, key uint64, value uint8, keySize int) error {
-	switch keySize {
-	case 2:
-		k := uint16(key)
-		return m.Update(k, value, ebpf.UpdateAny)
-	case 4:
-		k := uint32(key)
-		return m.Update(k, value, ebpf.UpdateAny)
-	default:
-		return fmt.Errorf("unsupported key size: %d", keySize)
-	}
-}
-
-func lookupKey(m *ebpf.Map, key uint64, keySize int) bool {
-	var val uint8
-	switch keySize {
-	case 2:
-		k := uint16(key)
-		return m.Lookup(k, &val) == nil
-	case 4:
-		k := uint32(key)
-		return m.Lookup(k, &val) == nil
-	default:
-		return false
-	}
-}
-
-func deleteKey(m *ebpf.Map, key uint64, keySize int) error {
-	switch keySize {
-	case 2:
-		k := uint16(key)
-		return m.Delete(k)
-	case 4:
-		k := uint32(key)
-		return m.Delete(k)
-	default:
-		return fmt.Errorf("unsupported key size: %d", keySize)
-	}
-}
-
-func iterateKeys(m *ebpf.Map, keySize int) ([]uint64, error) {
-	var keys []uint64
-	var val uint8
-
-	switch keySize {
-	case 2:
-		var key uint16
-		iter := m.Iterate()
-		for iter.Next(&key, &val) {
-			keys = append(keys, uint64(key))
-		}
-		return keys, iter.Err()
-	case 4:
-		var key uint32
-		iter := m.Iterate()
-		for iter.Next(&key, &val) {
-			keys = append(keys, uint64(key))
-		}
-		return keys, iter.Err()
-	default:
-		return nil, fmt.Errorf("unsupported key size: %d", keySize)
-	}
-}
-
-func isMapEmpty(m *ebpf.Map, keySize int) (bool, error) {
-	keys, err := iterateKeys(m, keySize)
-	if err != nil {
-		return false, err
-	}
-
-	return len(keys) == 0, nil
-}
-
-func clearAll(m *ebpf.Map, keySize int) error {
-	keys, err := iterateKeys(m, keySize)
-	if err != nil {
-		return err
-	}
-	for _, k := range keys {
-		if err := deleteKey(m, k, keySize); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func fmtKeys(keys []uint64) string {
-	return strings.ReplaceAll(fmt.Sprintf("%v", keys), " ", ",")
+		bpfutil.FmtKeys(pids), bpfutil.FmtKeys(uids), bpfutil.FmtKeys(ports),
+		bpfutil.FmtKeys(pidDeny), bpfutil.FmtKeys(uidDeny), bpfutil.FmtKeys(portDeny))
 }

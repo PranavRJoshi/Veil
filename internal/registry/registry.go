@@ -12,7 +12,8 @@
 //	        Flags: []registry.FlagDef{
 //	            {Name: "syscall", Short: "s", Description: "Filter by syscall name or number"},
 //	        },
-//	        Factory: func(flags map[string]string, sink output.EventSink) (loader.Program, error) {
+//	        MapNames: []string{"pid", "uid", "syscall", "pid_deny", "uid_deny", "syscall_deny"},
+//	        Factory: func(flags map[string]string, sink output.EventSink) (runner.Module, error) {
 //	            filter, err := ParseFilterConfig(flags)
 //	            if err != nil { return nil, err }
 //	            return New(filter, sink), nil
@@ -25,16 +26,10 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-)
 
-// EventSinkFactory is a function that creates an EventSink. Declared here
-// to avoid a circular import with internal/output; the concrete type
-// is output.EventSink, but we use an identical interface definition.
-// In practice the main package wires the real output.EventSink through.
-//
-// NOTE: We intentionally do NOT import internal/output here. The Factory
-// function signature uses the interface from the caller's perspective.
-// See the ModuleInfo.Factory field documentation.
+	"github.com/PranavRJoshi/Veil/internal/output"
+	"github.com/PranavRJoshi/Veil/internal/runner"
+)
 
 // FlagDef describes a CLI flag that a module accepts.
 type FlagDef struct {
@@ -44,23 +39,16 @@ type FlagDef struct {
 	HasValue    bool   // true if the flag takes an argument (default true for non-bool)
 }
 
-// ModuleFactory creates a module instance from parsed CLI flags. The second
-// argument is intentionally typed as interface{} to avoid circular imports
-// with internal/output--callers pass an output.EventSink, and the factory
-// implementation type-asserts it.
-//
-// type ModuleFactory func(flags map[string]string, sink interface{}) (interface{}, error)
-//
-// In practice: the returned interface{} must satisfy loader.Program, and
-// the sink must be output.EventSink. The main package enforces this at
-// wiring time.
-type ModuleFactory func(flags map[string]string, sink interface{}) (interface{}, error)
+// ModuleFactory creates a module instance from parsed CLI flags and an
+// output sink. The returned runner.Module must be safe to Load and Run.
+type ModuleFactory func(flags map[string]string, sink output.EventSink) (runner.Module, error)
 
 // ModuleInfo describes a registerable module.
 type ModuleInfo struct {
 	Name        string
 	Description string
 	Flags       []FlagDef
+	MapNames    []string // BPF filter map names owned by this module (e.g. "pid", "uid")
 	Factory     ModuleFactory
 }
 
