@@ -1,7 +1,8 @@
 package syscall
 
 //go:generate bpf2go -cc clang -target amd64,arm64 -cflags "-O2 -g -Wall" Tracer ../../bpf/syscall_tracer.bpf.c
-//go:generate go run ../../cmd/gen/syscalls
+//go:generate go run ../../cmd/gen/syscalls -arch amd64 -format tbl     -in ../../cmd/gen/syscalls/tables/syscall_64.tbl     -out syscall_table_amd64.go
+//go:generate go run ../../cmd/gen/syscalls -arch arm64 -format unistd  -in ../../cmd/gen/syscalls/tables/unistd_generic.h -out syscall_table_arm64.go
 
 /*
 	********************************** NOTE **********************************

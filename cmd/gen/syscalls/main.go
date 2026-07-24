@@ -1,8 +1,33 @@
 package main
 
+/*
+	Generates the per-architecture syscall number tables in modules/syscall.
+
+	Syscall numbers differ per architecture: openat is 257 on x86_64 and 56
+	on arm64, and 56 on x86_64 is clone. A single table built from whichever
+	host ran the generator is wrong everywhere else, which silently
+	mislabels every event and points --syscall at the wrong call.
+
+	Input comes from files vendored under tables/ rather than the host's
+	/usr/include, so the output does not depend on the machine that ran it
+	and a table for either architecture can be produced from either host.
+
+	Two upstream formats are parsed:
+
+	  syscall_64.tbl        x86_64. Columns: <nr> <abi> <name> <entry>.
+	  asm-generic/unistd.h  arm64 and other generic-ABI architectures.
+	                        Lines of "#define __NR_<name> <nr>", plus
+	                        "#define __NR3264_<name> <nr>" for calls whose
+	                        implementation differs between 32- and 64-bit.
+	                        Both carry a real number and both are kept.
+*/
+
 import (
 	"bufio"
+	"bytes"
+	"flag"
 	"fmt"
+	"go/format"
 	"os"
 	"sort"
 	"strconv"
@@ -11,162 +36,175 @@ import (
 )
 
 /*
-	TODO: The following system calls have unusal format compared to the
-	parsing test that is done below. Instead of '__NR_' prefix, syscall
-	number 222 and 223, which are mmap2 and fadvise64_64 respectively
-	use the format: '__NR3264_mmap' and '__NR3264_fadvise64'.
-
-	Before making modification to the code, it's better to first check
-	if this is used for all architectures or only the arm one, which I'm
-	using.
-
-	Also found some other variants with similar issues:
-
-		__NR3264_fcntl        - 25
-		__NR3264_statfs       - 43
-		__NR3264_fstatfs      - 44
-		__NR3264_truncate     - 45
-		__NR3264_ftruncate    - 46
-		__NR3264_lseek        - 62
-		__NR3264_sendfile     - 71
-		__NR3264_fstatat      - 79
-		__NR3264_fstat        - 80
-
-	It seems to me that we can check whether the prefix begins with '__NR_'
-	or '__NR3264_' and then strip out the prefix appropriately.
-*/
-
-/*
-	entry structure holds the system call number and the corresponding name.
+	entry holds a syscall number and its name.
 */
 type entry struct {
 	Nr   uint64
 	Name string
 }
 
-func findHeader() (string, error) {
-	candidates := []string{
-		"/usr/include/asm/unistd_64.h",
-		"/usr/include/asm-generic/unistd_64.h",
-		"/usr/include/x86_64-linux-gnu/asm/unistd_64.h",
-		"/usr/include/asm-generic/unistd.h",
-	}
-
-	/*
-		Check the availability of the header file. If found, return the absolute
-		path to header.
-	*/
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
-		}
-	}
-
-	/* failed to find header file in assumed locations */
-	return "", fmt.Errorf("failed to locate unistd[_64].h required to build the syscall table, tried %v", candidates)
-}
-
-func main() {
-	var headerPath string
-	var err error
-
-	/*
-		Instead of checking the 'candidates' in findHeader above, we give the user a chance
-		to provide the path to unistd.h header file that will be used to construct the
-		syscall table. Note that only that one path is looked into, and if it is invalid,
-		the process will exit.
-
-		If the user does not provide any additional argument to this program, then the
-		'candidates' are searched through.
-	*/
-	if len(os.Args) == 2 {
-		headerPath = os.Args[1]
-	} else {
-		headerPath, err = findHeader()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	f, err := os.Open(headerPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error opening %s: %v\n", headerPath, err)
-		os.Exit(1)
-	}
-	defer f.Close() /* ensure we properly close file on return */
-
-	seen := make(map[uint64]bool)
+/*
+	parseTbl reads the x86 syscall_64.tbl format. Comments start with '#'.
+	The x32 ABI entries are skipped: they duplicate names already present
+	under the common/64 ABI at different numbers, and Veil only traces the
+	64-bit ABI.
+*/
+func parseTbl(r *bufio.Scanner) []entry {
 	var entries []entry
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	seen := make(map[uint64]bool)
 
-		/*
-			We're only interested in lines that start with '#define __NR_'
-		*/
-		if !strings.HasPrefix(line, "#define __NR_") {
+	for r.Scan() {
+		line := strings.TrimSpace(r.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		/*
-			The entries of syscall are in the form:
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		if fields[1] == "x32" {
+			continue
+		}
 
-				#define __NR_io_setup 0
+		nr, err := strconv.ParseUint(fields[0], 10, 64)
+		if err != nil || seen[nr] {
+			continue
+		}
+		seen[nr] = true
+		entries = append(entries, entry{Nr: nr, Name: fields[2]})
+	}
 
-			When we split this line with the Fields method, there must be
-			three substrings, and if it's not, then we're probaly looking
-			at the wrong line.
-		*/
+	return entries
+}
+
+/*
+	parseUnistd reads the asm-generic/unistd.h format. Both __NR_ and
+	__NR3264_ carry a usable number; dropping the latter is what left
+	lseek, fstat, mmap, fcntl and friends out of the table entirely.
+*/
+func parseUnistd(r *bufio.Scanner) []entry {
+	var entries []entry
+	seen := make(map[uint64]bool)
+
+	for r.Scan() {
+		line := strings.TrimSpace(r.Text())
+		if !strings.HasPrefix(line, "#define __NR") {
+			continue
+		}
+
 		fields := strings.Fields(line)
 		if len(fields) != 3 {
 			continue
 		}
 
-		name := strings.TrimPrefix(fields[1], "__NR_")
-		nr, err := strconv.ParseUint(fields[2], 10, 64)
-		if err != nil {
+		var name string
+		switch {
+		case strings.HasPrefix(fields[1], "__NR3264_"):
+			name = strings.TrimPrefix(fields[1], "__NR3264_")
+		case strings.HasPrefix(fields[1], "__NR_"):
+			name = strings.TrimPrefix(fields[1], "__NR_")
+		default:
 			continue
 		}
 
-		// skip if we've already seen this syscall number
-		if seen[nr] {
+		/*
+			__NR_syscalls is the count of syscalls, not a syscall.
+			Likewise the arch_specific_syscall placeholder.
+		*/
+		if name == "syscalls" || name == "arch_specific_syscall" {
+			continue
+		}
+
+		nr, err := strconv.ParseUint(fields[2], 10, 64)
+		if err != nil || seen[nr] {
 			continue
 		}
 		seen[nr] = true
-
 		entries = append(entries, entry{Nr: nr, Name: name})
 	}
 
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "error reading header: %v\n", err)
+	return entries
+}
+
+func main() {
+	var (
+		arch   = flag.String("arch", "", "GOARCH the table is for (amd64, arm64)")
+		format = flag.String("format", "", "input format: tbl or unistd")
+		in     = flag.String("in", "", "path to the vendored input file")
+		out    = flag.String("out", "", "path to the generated Go file")
+	)
+	flag.Parse()
+
+	if *arch == "" || *format == "" || *in == "" || *out == "" {
+		fmt.Fprintln(os.Stderr, "usage: gen-syscalls -arch <goarch> -format <tbl|unistd> -in <file> -out <file>")
 		os.Exit(1)
 	}
 
-	// sort by syscall number for readability
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Nr < entries[j].Nr
-	})
+	f, err := os.Open(*in)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error opening %s: %v\n", *in, err)
+		os.Exit(1)
+	}
+	defer f.Close()
 
-	if err := render(entries); err != nil {
+	scanner := bufio.NewScanner(f)
+
+	var entries []entry
+	switch *format {
+	case "tbl":
+		entries = parseTbl(scanner)
+	case "unistd":
+		entries = parseUnistd(scanner)
+	default:
+		fmt.Fprintf(os.Stderr, "unknown format %q (want tbl or unistd)\n", *format)
+		os.Exit(1)
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "error reading %s: %v\n", *in, err)
+		os.Exit(1)
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintf(os.Stderr, "no syscalls parsed from %s; wrong format?\n", *in)
+		os.Exit(1)
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Nr < entries[j].Nr })
+
+	if err := render(*out, *arch, *in, entries); err != nil {
 		fmt.Fprintf(os.Stderr, "error rendering table: %v\n", err)
 		os.Exit(1)
 	}
+
+	fmt.Fprintf(os.Stderr, "wrote %s: %d syscalls for %s\n", *out, len(entries), *arch)
 }
 
-var tableTmpl = template.Must(template.New("table").Parse(`// Code generated by cmd/gen/syscalls. DO NOT EDIT.
+type tableData struct {
+	Arch    string
+	Source  string
+	Entries []entry
+}
+
+var tableTmpl = template.Must(template.New("table").Parse(
+	`// Code generated by cmd/gen/syscalls. DO NOT EDIT.
+// Source: {{.Source}}
+
+//go:build {{.Arch}}
+
 package syscall
 
 import "fmt"
 
 var syscallNames = map[uint64]string{
-{{- range .}}
+{{- range .Entries}}
 	{{.Nr}}: "{{.Name}}",
 {{- end}}
 }
 
 var syscallNumbers = map[string]uint64{
-{{- range .}}
+{{- range .Entries}}
 	"{{.Name}}": {{.Nr}},
 {{- end}}
 }
@@ -184,12 +222,27 @@ func SyscallNumber(name string) (uint64, bool) {
 }
 `))
 
-func render(entries []entry) error {
-	out, err := os.Create("syscall_table.go")
-	if err != nil {
-		return fmt.Errorf("create output file: %w", err)
-	}
-	defer out.Close()
+func render(path, arch, source string, entries []entry) error {
+	var buf bytes.Buffer
 
-	return tableTmpl.Execute(out, entries)
+	err := tableTmpl.Execute(&buf, tableData{
+		Arch:    arch,
+		Source:  source,
+		Entries: entries,
+	})
+	if err != nil {
+		return fmt.Errorf("execute template: %w", err)
+	}
+
+	/*
+		Run the result through go/format so the map literals come out
+		column-aligned. Doing it here keeps the template readable and
+		means the generated files can never fail a gofmt check.
+	*/
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("format generated source: %w", err)
+	}
+
+	return os.WriteFile(path, formatted, 0644)
 }
