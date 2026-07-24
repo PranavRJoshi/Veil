@@ -150,11 +150,16 @@ jobs:
       - name: Integration coverage summary
         run: go tool cover -func=coverage-integration.out | tail -20
 
+      - name: Generate html coverage report
+        run: go tool cover -html=coverage-integration.out -o coverage-integration.html
+
       - name: Upload integration coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-integration-${{ matrix.arch }}
-          path: coverage-integration.out
+          path: |
+            coverage-integration.out
+            coverage-integration.html
           retention-days: 10
 
       # Run again under the race detector. Kept as a second pass because
