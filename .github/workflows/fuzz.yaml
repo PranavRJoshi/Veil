@@ -1,0 +1,49 @@
+name: Veil (nightly fuzz)
+
+# The fuzz targets run only their seed corpus during the normal test job,
+# which is a fraction of their value. This explores properly, on a schedule
+# so it costs nothing per push.
+on:
+  schedule:
+    # 03:00 UTC daily.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+
+    strategy:
+      # One module finding a crasher must not cancel the others; each is an
+      # independent decoder and they fail independently.
+      fail-fast: false
+      matrix:
+        module: [files, syscall, scheduler, memory]
+
+    name: fuzz (${{ matrix.module }})
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.18'
+
+      - name: Fuzz parseEvent
+        run: |
+          go test -run FuzzParseEvent -fuzz FuzzParseEvent -fuzztime 5m \
+            ./modules/${{ matrix.module }}/
+
+      # Go writes a failing input to testdata/fuzz/<target>/ next to the
+      # package. Upload it so the reproducer can be committed as a
+      # regression seed rather than being lost with the runner.
+      - name: Upload crashers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashers-${{ matrix.module }}
+          path: modules/${{ matrix.module }}/testdata/fuzz/
+          retention-days: 30
+          if-no-files-found: ignore

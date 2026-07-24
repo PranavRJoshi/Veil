@@ -57,7 +57,7 @@ build:
 	go build -o $(BIN) ./cmd/veil
 
 test:
-	go test -race ./...
+	go test -race -count=1 ./...
 
 # Integration tests load real BPF programs, so the test binary needs root.
 # -exec sudo runs only the compiled binary under sudo, keeping the build
