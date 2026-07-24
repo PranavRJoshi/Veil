@@ -5,6 +5,7 @@ package syscall
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -65,6 +66,26 @@ func notSyscall(name string) func(testutil.Captured) bool {
 }
 
 /*
+	anySyscallFromSelf matches any syscall event from this process, without
+	reference to which call it was.
+
+	Tests that only need to know the pipeline is alive must use this rather
+	than waiting on a name: a table built for the wrong architecture still
+	labels events, so a name-based wait is satisfied by a mislabelled event
+	and the test passes while the bug it would have caught goes unnoticed.
+*/
+func anySyscallFromSelf() func(testutil.Captured) bool {
+	want := strconv.FormatUint(uint64(selfPID()), 10)
+	return func(c testutil.Captured) bool {
+		if c.Module != "syscall" {
+			return false
+		}
+		pid, ok := c.Field("pid")
+		return ok && pid == want
+	}
+}
+
+/*
 	openTempFile performs a handful of openat calls. Repeated because a
 	single call can be lost if the ring buffer consumer has not yet been
 	scheduled.
@@ -102,7 +123,19 @@ func TestIntegrationSyscallAllowFilterIsExclusive(t *testing.T) {
 	testutil.StartModule(t, mod)
 
 	openTempFile(t)
-	sink.WaitFor(t, testutil.DefaultTimeout, isSyscall("openat"))
+	got := sink.WaitFor(t, testutil.DefaultTimeout, isSyscall("openat"))
+
+	/*
+		Check the raw number against this architecture's ABI, not just the
+		label. A table built for the wrong architecture is internally
+		consistent -- it would filter on some other call and then label
+		that call "openat" -- so asserting on the name alone proves
+		nothing about which syscall was actually traced.
+	*/
+	want := strconv.FormatUint(anchorNr(t, "openat"), 10)
+	if nr, _ := got.Field("syscall_nr"); nr != want {
+		t.Errorf("event labelled openat carries syscall_nr %s, want %s on this arch", nr, want)
+	}
 
 	/*
 		The interesting assertion: nothing but openat got through. A
@@ -296,7 +329,7 @@ func TestIntegrationSyscallLifecycle(t *testing.T) {
 	go mod.Run(done)
 
 	openTempFile(t)
-	sink.WaitFor(t, testutil.DefaultTimeout, isSyscall("openat"))
+	sink.WaitFor(t, testutil.DefaultTimeout, anySyscallFromSelf())
 
 	if err := mod.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
