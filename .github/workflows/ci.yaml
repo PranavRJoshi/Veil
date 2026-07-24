@@ -65,3 +65,39 @@ jobs:
             coverage.out
             coverage.html
           retention-days: 10
+
+  # Loads the committed BPF objects into a real kernel and drives a real
+  # workload. Runners are x86_64, so this is the only place the x86 objects
+  # are exercised at runtime -- development happens on arm64.
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.18'
+
+      # Recorded because a failure here is usually environmental: a kernel
+      # without BTF, or a hook that does not exist on this release.
+      - name: Environment
+        run: |
+          uname -a
+          echo "arch: $(dpkg --print-architecture)"
+          test -r /sys/kernel/btf/vmlinux \
+            && echo "kernel BTF: present" \
+            || echo "kernel BTF: MISSING (CO-RE relocation will fail)"
+
+      # The arm64 files must be excluded by build constraints here. If an
+      # arm64 object were selected, the tests would still pass while
+      # reading the wrong registers.
+      - name: Confirm the x86 objects are the ones selected
+        run: |
+          go list -f '{{.Dir}} {{.GoFiles}}' ./modules/... | tr ' ' '\n' \
+            | grep -E '_bpfe.*\.go$' | sort -u
+
+      - name: Integration tests
+        run: go test -tags integration -exec sudo -count=1 -v -timeout 10m ./modules/...
