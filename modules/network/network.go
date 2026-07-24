@@ -1,6 +1,6 @@
 package network
 
-//go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -target bpf -D__TARGET_ARCH_arm64" NetworkTracer ../../bpf/network_tracer.bpf.c
+//go:generate bpf2go -cc clang -target amd64,arm64 -cflags "-O2 -g -Wall" NetworkTracer ../../bpf/network_tracer.bpf.c
 
 /*
 	********************************** NOTE **********************************

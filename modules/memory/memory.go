@@ -1,6 +1,6 @@
 package memory
 
-//go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -target bpf -D__TARGET_ARCH_arm64" MemoryTracer ../../bpf/memory_tracer.bpf.c
+//go:generate bpf2go -cc clang -target amd64,arm64 -cflags "-O2 -g -Wall" MemoryTracer ../../bpf/memory_tracer.bpf.c
 
 /*
 	Memory module for Veil.

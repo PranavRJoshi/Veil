@@ -1,2 +1,5 @@
 bpf/headers/vmlinux.h
+bpf/headers/vmlinux_x86.h
+bpf/headers/vmlinux_arm64.h
+bpf/headers/.btf_*.tmp
 bin/

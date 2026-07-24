@@ -1,6 +1,6 @@
 package files
 
-//go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -target bpf -D__TARGET_ARCH_arm64" FileAccess ../../bpf/file_access.bpf.c
+//go:generate bpf2go -cc clang -target amd64,arm64 -cflags "-O2 -g -Wall" FileAccess ../../bpf/file_access.bpf.c
 
 import (
 	"fmt"

@@ -1,6 +1,6 @@
 package syscall
 
-//go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -target bpf" Tracer ../../bpf/syscall_tracer.bpf.c
+//go:generate bpf2go -cc clang -target amd64,arm64 -cflags "-O2 -g -Wall" Tracer ../../bpf/syscall_tracer.bpf.c
 //go:generate go run ../../cmd/gen/syscalls
 
 /*

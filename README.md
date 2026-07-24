@@ -63,7 +63,7 @@ Every module follows the same pattern: a BPF C program defines the kernel-side h
 |---|---|---|
 | Go | 1.18+ | Userspace toolchain |
 | Clang | 14.0+ | BPF C compilation |
-| Linux kernel | 5.4+ | BTF and CO-RE support |
+| Linux kernel | 5.8+ | BTF and CO-RE support; ring buffer maps |
 | bpftool | any | Generates `vmlinux.h` from running kernel |
 
 Veil requires root privileges (or `CAP_BPF` + `CAP_PERFMON`) to load eBPF programs.

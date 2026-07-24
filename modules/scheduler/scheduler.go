@@ -1,6 +1,6 @@
 package scheduler
 
-//go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -target bpf" SchedulerTracer ../../bpf/sched_tracer.bpf.c
+//go:generate bpf2go -cc clang -target amd64,arm64 -cflags "-O2 -g -Wall" SchedulerTracer ../../bpf/sched_tracer.bpf.c
 
 /*
 	Scheduler module for Veil.

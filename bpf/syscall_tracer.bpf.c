@@ -20,7 +20,7 @@
  * which require the caller function to be GPL compatible as well.
  */
 
-#include "headers/vmlinux.h"
+#include "headers/target_arch.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
