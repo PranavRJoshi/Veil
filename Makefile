@@ -22,7 +22,7 @@ MEMORY_MODULE_DIR := $(MODULE_DIR)/memory
 MEMORY_BPF2GO := $(MEMORY_MODULE_DIR)/memorytracer_bpfeb.go $(MEMORY_MODULE_DIR)/memorytracer_bpfel.go
 MEMORY_BPF2GO_OBJS := $(MEMORY_MODULE_DIR)/memorytracer_bpfeb.o $(MEMORY_MODULE_DIR)/memorytracer_bpfel.o
 
-.PHONY: all generate clean
+.PHONY: all generate clean test test-integration
 
 all: generate build
 
@@ -35,6 +35,15 @@ bpf/headers/vmlinux.h:
 
 build:
 	go build -o bin/veil ./cmd/veil
+
+test:
+	go test ./...
+
+# Integration tests load real BPF programs, so the test binary needs root.
+# -exec sudo runs only the compiled binary under sudo, keeping the build
+# and the module cache owned by the current user.
+test-integration:
+	go test -tags integration -exec sudo -count=1 -timeout 5m ./modules/...
 
 clean:
 	rm -f bpf/headers/vmlinux.h $(SYSCALL_BPF2GO) \
