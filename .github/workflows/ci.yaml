@@ -39,8 +39,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # -race unconditionally here: unit tests carry no wall-clock
+      # assertions for it to weaken, and -covermode=atomic is already the
+      # mode the race detector requires.
       - name: Test
-        run: go test -v -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -v -count=1 -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Coverage summary
         if: always()
@@ -67,10 +70,24 @@ jobs:
           retention-days: 10
 
   # Loads the committed BPF objects into a real kernel and drives a real
-  # workload. Runners are x86_64, so this is the only place the x86 objects
-  # are exercised at runtime -- development happens on arm64.
+  # workload. Run on both architectures: the BPF objects and the syscall
+  # number tables are per-arch, and a wrong one fails silently rather than
+  # refusing to load.
   integration:
-    runs-on: ubuntu-latest
+    strategy:
+      # Report both architectures. Cancelling the sibling on first failure
+      # would hide whether a problem is arch-specific, which is the whole
+      # reason for running both.
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+
+    runs-on: ${{ matrix.runner }}
+    name: integration (${{ matrix.arch }})
 
     steps:
       - name: Checkout code
@@ -91,13 +108,22 @@ jobs:
             && echo "kernel BTF: present" \
             || echo "kernel BTF: MISSING (CO-RE relocation will fail)"
 
-      # The arm64 files must be excluded by build constraints here. If an
-      # arm64 object were selected, the tests would still pass while
-      # reading the wrong registers.
-      - name: Confirm the x86 objects are the ones selected
+      # Build constraints must have picked this runner's objects. Selecting
+      # the other architecture's would still load and run, just read the
+      # wrong registers, so make the choice visible.
+      - name: Confirm the per-arch artifacts selected
         run: |
           go list -f '{{.Dir}} {{.GoFiles}}' ./modules/... | tr ' ' '\n' \
-            | grep -E '_bpfe.*\.go$' | sort -u
+            | grep -E '(_bpfe.*|syscall_table_.*)\.go$' | sort -u
 
       - name: Integration tests
         run: go test -tags integration -exec sudo -count=1 -v -timeout 10m ./modules/...
+
+      # Run again under the race detector. Kept as a second pass because
+      # -race slows Go-side execution, and the negative assertions are
+      # fixed wall-clock windows: under -race "no event arrived" is easier
+      # to satisfy, so this run is weaker evidence for those and stronger
+      # for everything concurrent. arm64's weaker memory ordering makes it
+      # the more interesting of the two to cover.
+      - name: Integration tests (race detector)
+        run: go test -tags integration -exec sudo -count=1 -race -timeout 15m ./modules/...

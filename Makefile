@@ -57,13 +57,21 @@ build:
 	go build -o $(BIN) ./cmd/veil
 
 test:
-	go test ./...
+	go test -race ./...
 
 # Integration tests load real BPF programs, so the test binary needs root.
 # -exec sudo runs only the compiled binary under sudo, keeping the build
 # and the module cache owned by the current user.
 test-integration:
 	go test -tags integration -exec sudo -count=1 -timeout 5m ./modules/...
+
+# Separate from test-integration rather than folded into it. The race
+# detector slows Go-side execution, and the negative assertions are fixed
+# wall-clock windows, so under -race "no event arrived" becomes easier to
+# satisfy. The non-race run stays the authoritative one; this pass exists
+# to find data races in the modules and the test harness.
+test-integration-race:
+	go test -tags integration -exec sudo -count=1 -race -timeout 10m ./modules/...
 
 clean:
 	rm -f $(BIN)
