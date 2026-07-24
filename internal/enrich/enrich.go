@@ -25,14 +25,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-)
 
-// Sink is identical to output.EventSink. Redefined here to avoid a
-// circular import. The main package wires them together.
-type Sink interface {
-	Emit(module string, fields map[string]interface{}) error
-	Close() error
-}
+	"github.com/PranavRJoshi/Veil/internal/output"
+)
 
 // Enricher is a function that modifies event fields in place.
 type Enricher func(module string, fields map[string]interface{})
@@ -40,12 +35,12 @@ type Enricher func(module string, fields map[string]interface{})
 // EnrichSink wraps a downstream sink and applies one or more enrichers
 // to every event before forwarding.
 type EnrichSink struct {
-	next      Sink
+	next      output.EventSink
 	enrichers []Enricher
 }
 
 // NewEnrichSink creates a middleware sink that applies enrichers in order.
-func NewEnrichSink(next Sink, enrichers ...Enricher) *EnrichSink {
+func NewEnrichSink(next output.EventSink, enrichers ...Enricher) *EnrichSink {
 	return &EnrichSink{next: next, enrichers: enrichers}
 }
 
@@ -68,7 +63,7 @@ func (s *EnrichSink) Close() error {
 type EnricherOption func() Enricher
 
 // Chain wraps baseSink with all provided enrichers in a single EnrichSink.
-func Chain(baseSink Sink, opts ...EnricherOption) Sink {
+func Chain(baseSink output.EventSink, opts ...EnricherOption) output.EventSink {
 	enrichers := make([]Enricher, len(opts))
 	for i, opt := range opts {
 		enrichers[i] = opt()

@@ -524,8 +524,11 @@ const helpText = `Veil control commands:
   quit/exit                   Stop Veil and exit
   help                        Show this help
 
-Module: syscall, files, network
+Modules: syscall, files, network, scheduler, memory
 General Map Names: pid, uid
 Syscall Module Map Names: syscall
 Network Module Map Names: port
+Scheduler Module Map Names: cpu
+Memory Module Map Names: fault
+Deny variants: append _deny to any map name (e.g. pid_deny)
 Keys: decimal`

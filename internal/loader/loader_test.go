@@ -5,42 +5,6 @@ import (
 )
 
 /*
-	stubProgram structure implements Program for testing, simulates a real BPF
-	module.
-*/
-type stubProgram struct {
-	*BaseProgram
-	loadErr error
-}
-
-/*
-	returns a pointer to dynamically allocated stubProgram object.
-*/
-func newStub(name string, loadErr error) *stubProgram {
-	return &stubProgram{
-		BaseProgram: NewBaseProgram(name),
-		loadErr:     loadErr,
-	}
-}
-
-/*
-	Load() method for stubProgram structure.
-*/
-func (s *stubProgram) Load() error {
-	if s.loadErr != nil {
-		return s.loadErr
-	}
-	return s.MarkLoaded()
-}
-
-/*
-	Close() method for stubProgram structure.
-*/
-func (s *stubProgram) Close() error {
-	return s.MarkClosed()
-}
-
-/*
 	Test for BPF state machine.
 */
 func TestStateMachine(t *testing.T) {

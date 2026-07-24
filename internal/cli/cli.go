@@ -72,7 +72,7 @@ Negation filter examples:
 }
 
 /*
-	A simple parser which lineraly parses the command line arguments and
+	A simple parser which linearly parses the command line arguments and
 	appropriately modifies the Config structure.
 
 	We could probably use standard library function such as 'getopt' or
@@ -83,7 +83,7 @@ func Parse(args []string) (Config, error) {
 		ModuleFlags: make(map[string]string),
 	}
 
-	/* Veil expects arguments, specially '--module'  */
+	/* Veil expects arguments, especially '--module' */
 	if len(args) == 0 {
 		usage()
 		os.Exit(0)

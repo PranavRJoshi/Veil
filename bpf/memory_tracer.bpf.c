@@ -1,4 +1,4 @@
-// go:build ignore
+//go:build ignore
 
 /*
  * Memory tracing BPF program for Veil.

@@ -65,7 +65,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "pprof: %v\n", err)
 			os.Exit(1)
 		}
-		pprof.StartCPUProfile(pprofFile)
+		if err := pprof.StartCPUProfile(pprofFile); err != nil {
+			pprofFile.Close()
+			fmt.Fprintf(os.Stderr, "pprof: %v\n", err)
+			os.Exit(1)
+		}
 		defer func() {
 			pprof.StopCPUProfile()
 			pprofFile.Close()
@@ -96,7 +100,7 @@ func main() {
 		pause.
 
 		For CountSink, if the EventSink is wrapped by CountSink, the live reporting
-		is supprssed in favor of overall summary at the termination of program. Once
+		is suppressed in favor of overall summary at the termination of program. Once
 		Close() of CountSink method is called, the report is shown to the user.
 	*/
 	var baseSink output.EventSink
@@ -146,7 +150,7 @@ func main() {
 		top-N summary. In this mode, live events are **not** streamed to standard
 		output stream--only the summary is shown (on standard error stream).
 
-		Enrichment (--enrich) has no effect in count mode since the summary ouput
+		Enrichment (--enrich) has no effect in count mode since the summary output
 		does not include the enriched fields. Warn the user if both are
 		specified.
 	*/
@@ -213,10 +217,10 @@ func main() {
 	go mr.RunAll(done)
 
 	/*
-		Build the control handler. Until modules implement MapUpdater, we use
-		a stub that reports status for all loaded modules but rejects filter
-		modifications. When MapUpdater is implemented, this will become a
-		routing dispatcher keyed by module name.
+		Build the control handler. Every module implements MapUpdater, so
+		buildUpdater routes commands directly (single module) or through a
+		compositeUpdater keyed by module name (multi-module). The stub is
+		only a fallback for a module that drops MapUpdater support.
 	*/
 	moduleLabel := strings.Join(mr.Names(), ", ")
 	updater := buildUpdater(modules, moduleNames)
@@ -249,7 +253,7 @@ func main() {
 		Two-stage signal handling:
 
 		First CTRL-C  - pause events, enter interactive control
-		"resume"      - resume evetns, go back to tracing
+		"resume"      - resume events, go back to tracing
 		"quit"/exit   - shut down
 		Second CTRL-C - shut down (while in interactive mode)
 	*/
@@ -259,7 +263,7 @@ func main() {
 	for {
 		sig := <-sigCh
 
-		/* SIGTERM always means immeditate shutdown */
+		/* SIGTERM always means immediate shutdown */
 		if sig == syscall.SIGTERM {
 			break
 		}
@@ -350,7 +354,7 @@ func parseModuleNames(raw string) []string {
 	compositeUpdater that dispatches by module name.
 
 	If a module doesn't implement MapUpdater, it gets a stub entry that reports
-	status but rejects filter modificaiton.
+	status but rejects filter modification.
 */
 func buildUpdater(modules []runner.Module, names []string) control.MapUpdater {
 	updaters := make(map[string]control.MapUpdater, len(modules))
@@ -387,7 +391,7 @@ func buildUpdater(modules []runner.Module, names []string) control.MapUpdater {
 	MapUpdater based on a module prefix in the map name.
 
 	Plain map name ("pid", "port"):
-		Routes via mapOwnership. Shared maps (pid, uid) are sent to all lodaded
+		Routes via mapOwnership. Shared maps (pid, uid) are sent to all loaded
 		modules. Module-specific maps (syscall, port) are sent to their owner only.
 
 	Module-qualified map name ("network.port", "syscall.pid"):
@@ -405,11 +409,10 @@ type compositeUpdater struct {
 	resolveTargets determines which modules and what map name have to use for
 	a given (possibly qualified) map name.
 
-	NOTE: On current implementation, its redundant to check for single module
-	since buildUpdater() only creates compositeUpdater service when user requests
-	for multiple module. The base MapUdpater for runners module is only used, so
-	none of compositeUpdater will be issued unless a request was made to use
-	multiple eBPF programs.
+	NOTE: In the current implementation, checking for a single module here is
+	redundant: buildUpdater() only creates a compositeUpdater when the user
+	requests multiple modules. In single-module mode the module's own
+	MapUpdater is used directly, so compositeUpdater never sees that case.
 
 	"pid"           -> targets all loaded modules, map name "pid"
 	"network.port"  -> targets only network module, map name "port"
@@ -568,10 +571,10 @@ func (c *compositeUpdater) Status() string {
 }
 
 /*
-	stubUpdater is used when module(s) don't implement MapUpdater.
-	It allows status queries but rejects filter modifications.
-	When modules implement MapUpdater, this will be replaced by a
-	routing dispatcher keyed by module name.
+	stubUpdater is the fallback for a module that does not implement
+	MapUpdater. It allows status queries but rejects filter modifications.
+	Every current module implements MapUpdater, so this only guards
+	against future modules that omit runtime filter support.
 */
 type stubUpdater struct {
 	module string

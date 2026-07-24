@@ -37,7 +37,7 @@ build:
 	go build -o bin/veil ./cmd/veil
 
 clean:
-	rm -f bin/kernscope bpf/headers/vmlinux.h $(SYSCALL_BPF2GO) \
+	rm -f bpf/headers/vmlinux.h $(SYSCALL_BPF2GO) \
 	$(SYSCALL_BPF2GO_OBJS) $(FILES_BPF2GO) $(FILES_BPF2GO_OBJS) \
 	$(NETWORK_BPF2GO) $(NETWORK_BPF2GO_OBJS) $(SCHEDULER_BPF2GO) \
 	$(SCHEDULER_BPF2GO_OBJS) $(MEMORY_BPF2GO) $(MEMORY_BPF2GO_OBJS) \
