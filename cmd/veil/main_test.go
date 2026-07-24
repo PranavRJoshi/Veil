@@ -180,9 +180,14 @@ func TestComposite_AddSyscallModuleOnly(t *testing.T) {
 	if !syscallU.hasKey("syscall", 257) {
 		t.Error("syscall module should have syscall 257")
 	}
-	/* network doesn't have a "syscall" map, so it shouldn't be touched */
-	if networkU.count("pid") != 0 && networkU.count("uid") != 0 {
-		/* network module is fine, it simply doesn't own "syscall" */
+	/*
+		"syscall" is owned by the syscall module alone, so the network
+		module must be left untouched. Every map it does own stays empty.
+	*/
+	for _, mapName := range []string{"pid", "uid", "port"} {
+		if n := networkU.count(mapName); n != 0 {
+			t.Errorf("network %s map should be untouched, has %d keys", mapName, n)
+		}
 	}
 }
 
@@ -274,16 +279,19 @@ func TestComposite_DelKeyNotInAllModules(t *testing.T) {
 	err := c.DelFilter("pid", 42)
 
 	/*
-		Since network never had the key, its DelFilter returns an error.
-		The compositeUpdater currently reports the last error even if one
-		module succeeded. This is the documented behavior per CONTEXT.md.
+		"pid" is a shared map, so the delete is routed to both modules.
+		Only syscall holds the key; network reports that it does not, and
+		compositeUpdater collects every module's error rather than
+		discarding all but one.
 	*/
 	if err == nil {
-		/* This may be nil or non-nil depending on implementation choice */
-		/* Currently the code returns lastErr, which would be network's error */
-		/* But if network module doesn't have the key, it will error */
+		t.Fatal("DelFilter returned nil, want the network module's failure reported")
 	}
-	/* But syscall's key should definitely be gone */
+	if !strings.Contains(err.Error(), "network") {
+		t.Errorf("error %q does not identify which module failed", err)
+	}
+
+	/* The module that did hold the key must still have lost it. */
 	if syscallU.hasKey("pid", 42) {
 		t.Error("syscall should not have pid 42 after del")
 	}
