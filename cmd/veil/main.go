@@ -552,6 +552,33 @@ func (c *compositeUpdater) ListFiltersDetailed(mapName string) (map[string][]uin
 	return result, nil
 }
 
+/*
+	ValidateFilter routes validation to each target module that implements
+	control.FilterValidator, combining their soft warnings and blocking on
+	the first hard error. Routing errors are left for AddFilter to report.
+*/
+func (c *compositeUpdater) ValidateFilter(mapName string, key uint64) (string, error) {
+	targets, realMap, err := c.resolveTargets(mapName)
+	if err != nil {
+		return "", nil
+	}
+	var warns []string
+	for _, name := range targets {
+		v, ok := c.updaters[name].(control.FilterValidator)
+		if !ok {
+			continue
+		}
+		w, err := v.ValidateFilter(realMap, key)
+		if err != nil {
+			return "", err
+		}
+		if w != "" {
+			warns = append(warns, w)
+		}
+	}
+	return strings.Join(warns, "; "), nil
+}
+
 func (c *compositeUpdater) ClearFilters(mapName string) error {
 	targets, realMap, err := c.resolveTargets(mapName)
 	if err != nil {

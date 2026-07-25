@@ -194,6 +194,8 @@ func (t *SchedulerModule) Load() error {
 		return err
 	}
 
+	t.warnInvalidCPUs()
+
 	t.initMapUpdater()
 
 	lnk, err := link.Tracepoint("sched", "sched_switch", t.objs.TraceSchedSwitch, nil)

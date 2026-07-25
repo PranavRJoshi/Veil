@@ -18,7 +18,7 @@ import (
 )
 
 /*
-MapUpdater bridges control commands to BPF map operations.
+	MapUpdater bridges control commands to BPF map operations.
 */
 type MapUpdater interface {
 	AddFilter(mapName string, key uint64) error
@@ -29,8 +29,18 @@ type MapUpdater interface {
 }
 
 /*
-Handler processes control commands against a MapUpdater.
-It is shared by both the interactive prompt and the socket server.
+	FilterValidator is an optional extension of MapUpdater. Modules implement
+	it where a filter value can be checked for meaning before it is added:
+	warn is non-empty for a soft issue (the filter will never match); err is
+	non-nil for a hard failure that blocks the add.
+*/
+type FilterValidator interface {
+	ValidateFilter(mapName string, key uint64) (warn string, err error)
+}
+
+/*
+	Handler processes control commands against a MapUpdater.
+	It is shared by both the interactive prompt and the socket server.
 */
 type Handler struct {
 	updater MapUpdater
@@ -41,13 +51,13 @@ func NewHandler(updater MapUpdater) *Handler {
 }
 
 /*
-HandleCommand parses and executes a single command line, returning
-the response string. Safe to call from any goroutine.
+	HandleCommand parses and executes a single command line, returning
+	the response string. Safe to call from any goroutine.
 
-Map names can be plain ("pid") or module-qualified ("network.port"). Plain
-names route through the MapUpdater's dispatch logic (e.g., compositeUpdater
-routes by ownership). Module-qualified names are passed through as-is; the
-MapUpdater implementation decides how to handle the prefix.
+	Map names can be plain ("pid") or module-qualified ("network.port"). Plain
+	names route through the MapUpdater's dispatch logic (e.g., compositeUpdater
+	routes by ownership). Module-qualified names are passed through as-is; the
+	MapUpdater implementation decides how to handle the prefix.
 */
 func (h *Handler) HandleCommand(line string) string {
 
@@ -131,12 +141,26 @@ func (h *Handler) doAdd(mapName, keyStr string) string {
 	if err != nil {
 		return fmt.Sprintf("ERR invalid key %q: %v", keyStr, err)
 	}
-	warn := h.findExisting(mapName, key)
+
+	var warns []string
+	if v, ok := h.updater.(FilterValidator); ok {
+		w, err := v.ValidateFilter(mapName, key)
+		if err != nil {
+			return fmtErr(err)
+		}
+		if w != "" {
+			warns = append(warns, w)
+		}
+	}
+	if w := h.findExisting(mapName, key); w != "" {
+		warns = append(warns, w)
+	}
+
 	if err := h.updater.AddFilter(mapName, key); err != nil {
 		return fmtErr(err)
 	}
-	if warn != "" {
-		return "WARN " + warn
+	if len(warns) > 0 {
+		return "WARN " + strings.Join(warns, "; ")
 	}
 	return "OK"
 }
@@ -259,8 +283,8 @@ func (h *Handler) doClear(mapName string) string {
 // --- Interactive mode (stdin/stdout) ---
 
 /*
-bellingCompleter wraps an AutoCompleter and writes BEL (\a) to w when Tab
-finds no completions, giving audible feedback for unrecognised input.
+	bellingCompleter wraps an AutoCompleter and writes BEL (\a) to w when Tab
+	finds no completions, giving audible feedback for unrecognised input.
 */
 type bellingCompleter struct {
 	inner readline.AutoCompleter
@@ -276,7 +300,7 @@ func (b *bellingCompleter) Do(line []rune, pos int) ([][]rune, int) {
 }
 
 /*
-InteractiveResult indicates how the interactive session ended.
+	InteractiveResult indicates how the interactive session ended.
 */
 type InteractiveResult int
 
@@ -286,13 +310,13 @@ const (
 )
 
 /*
-Interactive runs a readline-backed command loop writing responses to w.
-It returns when the user types "resume", "quit", "exit", CTRL-C, CTRL-D,
-or cancel is closed (used by the caller to unblock on external signals).
+	Interactive runs a readline-backed command loop writing responses to w.
+	It returns when the user types "resume", "quit", "exit", CTRL-C, CTRL-D,
+	or cancel is closed (used by the caller to unblock on external signals).
 
-In raw terminal mode readline intercepts CTRL-C itself (returning
-ErrInterrupt) so SIGINT does not reach the process signal channel while
-this function is running.
+	In raw terminal mode readline intercepts CTRL-C itself (returning
+	ErrInterrupt) so SIGINT does not reach the process signal channel while
+	this function is running.
 */
 func Interactive(h *Handler, w io.Writer, cancel <-chan struct{}) InteractiveResult {
 	fmt.Fprintln(w, "\nVeil interactive control (type 'help' for commands, 'resume' to continue tracing, 'quit' to exit)")
@@ -370,8 +394,8 @@ func Interactive(h *Handler, w io.Writer, cancel <-chan struct{}) InteractiveRes
 }
 
 /*
-interactiveScanner is the plain bufio.Scanner fallback used when readline
-cannot initialise (e.g. stdout is not a terminal).
+	interactiveScanner is the plain bufio.Scanner fallback used when readline
+	cannot initialise (e.g. stdout is not a terminal).
 */
 func interactiveScanner(h *Handler, r io.Reader, w io.Writer) InteractiveResult {
 	fmt.Fprint(w, "veil $ ")
@@ -401,7 +425,7 @@ func interactiveScanner(h *Handler, r io.Reader, w io.Writer) InteractiveResult 
 // --- Unix socket server ---
 
 /*
-Server listens on a Unix domain socket and processes filter commands.
+	Server listens on a Unix domain socket and processes filter commands.
 */
 type Server struct {
 	handler *Handler
@@ -412,7 +436,7 @@ type Server struct {
 }
 
 /*
-NewServer creates a control server at the given socket path.
+	NewServer creates a control server at the given socket path.
 */
 func NewServer(path string, handler *Handler) *Server {
 	return &Server{
@@ -441,7 +465,7 @@ func (s *Server) Start() error {
 }
 
 /*
-Stop shuts down the server and removes the socket file.
+	Stop shuts down the server and removes the socket file.
 */
 func (s *Server) Stop() error {
 	close(s.done)
@@ -454,7 +478,7 @@ func (s *Server) Stop() error {
 }
 
 /*
-SocketPath returns the path to the Unix socket.
+	SocketPath returns the path to the Unix socket.
 */
 func (s *Server) SocketPath() string {
 	return s.path
