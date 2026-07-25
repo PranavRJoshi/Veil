@@ -40,8 +40,10 @@ func init() {
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
 			{Name: "cpu", Short: "", Description: "Filter by CPU core (comma-separated)", HasValue: true},
 		},
-		MapNames:  []string{"pid", "uid", "cpu", "pid_deny", "uid_deny", "cpu_deny"},
-		Formatter: textFormat,
+		MapNames:        []string{"pid", "uid", "cpu", "pid_deny", "uid_deny", "cpu_deny"},
+		Formatter:       textFormat,
+		DefaultCountKey: "next_comm",
+		CountFields:     []string{"prev_pid", "next_pid", "prev_tid", "next_tid", "cpu", "prev_state", "prev_prio", "next_prio", "prev_comm", "next_comm"},
 		Factory: func(flags map[string]string, sink output.EventSink) (runner.Module, error) {
 			filter, err := ParseFilterConfig(flags)
 			if err != nil {

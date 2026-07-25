@@ -51,6 +51,9 @@ type ModuleInfo struct {
 	MapNames    []string // BPF filter map names owned by this module (e.g. "pid", "uid")
 	Factory     ModuleFactory
 	Formatter   output.TextFormatFunc // renders an event as a text line
+
+	DefaultCountKey string   // field --count aggregates on by default
+	CountFields     []string // event field names valid for --count-by
 }
 
 var (

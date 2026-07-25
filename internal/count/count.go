@@ -29,51 +29,46 @@ import (
 	"io"
 	"sort"
 	"sync"
+
+	"github.com/PranavRJoshi/Veil/internal/registry"
 )
 
 /*
-	defaultKeyFields maps module names to the most useful aggregation
-	field for that module. These are the field names produced by each
-	module's toFields function.
+	commonFields are present in every module's events (from the base
+	events.Event and the shared toFields keys), so they are valid to
+	--count-by regardless of which modules are loaded.
 */
-var defaultKeyFields = map[string]string{
-	"syscall":   "syscall",
-	"files":     "filename",
-	"network":   "dport",
-	"scheduler": "next_comm",
-	"memory":    "evt_type",
+var commonFields = []string{"pid", "tid", "uid", "gid", "timestamp", "comm", "kind"}
+
+/*
+	defaultCountKeys maps each registered module to its default aggregation
+	field, from ModuleInfo.DefaultCountKey.
+*/
+func defaultCountKeys() map[string]string {
+	m := make(map[string]string)
+	for _, info := range registry.All() {
+		if info.DefaultCountKey != "" {
+			m[info.Name] = info.DefaultCountKey
+		}
+	}
+	return m
 }
 
 /*
-	validKeyFields is the complete set of field names that can appear
-	in event field maps across all modules. This is used to validate
-	the --count-by argument at parse time.
-
-	Common fields (all modules): pid, tid, uid, gid, timestamp, comm, kind
-	Syscall: syscall, syscall_nr
-	Files: filename, op
-	Network: saddr, daddr, sport, dport, evt_type, oldstate, newstate
-	Scheduler: prev_pid, next_pid, prev_tid, next_tid, cpu, prev_state,
-	           prev_prio, next_prio, prev_comm, next_comm
-	Memory: evt_type (shared with network), address
+	validCountFields is the set of field names --count-by accepts: the
+	common fields plus every registered module's declared CountFields.
 */
-var validKeyFields = map[string]bool{
-	/* common */
-	"pid": true, "tid": true, "uid": true, "gid": true,
-	"timestamp": true, "comm": true, "kind": true,
-	/* syscall */
-	"syscall": true, "syscall_nr": true,
-	/* files */
-	"filename": true, "op": true,
-	/* network */
-	"saddr": true, "daddr": true, "sport": true, "dport": true,
-	"evt_type": true, "oldstate": true, "newstate": true,
-	/* scheduler */
-	"prev_pid": true, "next_pid": true, "prev_tid": true, "next_tid": true,
-	"cpu": true, "prev_state": true, "prev_prio": true, "next_prio": true,
-	"prev_comm": true, "next_comm": true,
-	/* memory */
-	"address": true,
+func validCountFields() map[string]bool {
+	m := make(map[string]bool, len(commonFields))
+	for _, f := range commonFields {
+		m[f] = true
+	}
+	for _, info := range registry.All() {
+		for _, f := range info.CountFields {
+			m[f] = true
+		}
+	}
+	return m
 }
 
 /*
@@ -82,16 +77,17 @@ var validKeyFields = map[string]bool{
 	the name is not recognized.
 */
 func ValidateKeyField(field string) error {
-	if validKeyFields[field] {
+	valid := validCountFields()
+	if valid[field] {
 		return nil
 	}
 
-	valid := make([]string, 0, len(validKeyFields))
-	for k := range validKeyFields {
-		valid = append(valid, k)
+	names := make([]string, 0, len(valid))
+	for k := range valid {
+		names = append(names, k)
 	}
-	sort.Strings(valid)
-	return fmt.Errorf("unknown count-by field %q; valid fields: %v", field, valid)
+	sort.Strings(names)
+	return fmt.Errorf("unknown count-by field %q; valid fields: %v", field, names)
 }
 
 /*
@@ -108,12 +104,13 @@ type entry struct {
 	a ranked summary to the writer on Close. Thread-safe.
 */
 type CountSink struct {
-	mu       sync.Mutex
-	counts   map[string]map[string]uint64 /* module -> key -> count */
-	total    map[string]uint64            /* module -> total events */
-	topN     int                          /* how many entries to show */
-	w        io.Writer                    /* summary output destination */
-	keyField string                       /* override: use this field for all modules */
+	mu          sync.Mutex
+	counts      map[string]map[string]uint64 /* module -> key -> count */
+	total       map[string]uint64            /* module -> total events */
+	topN        int                          /* how many entries to show */
+	w           io.Writer                    /* summary output destination */
+	keyField    string                       /* override: use this field for all modules */
+	defaultKeys map[string]string            /* per-module default, from the registry */
 }
 
 /*
@@ -125,10 +122,11 @@ func NewCountSink(w io.Writer, topN int) *CountSink {
 		topN = 10
 	}
 	return &CountSink{
-		counts: make(map[string]map[string]uint64),
-		total:  make(map[string]uint64),
-		topN:   topN,
-		w:      w,
+		counts:      make(map[string]map[string]uint64),
+		total:       make(map[string]uint64),
+		topN:        topN,
+		w:           w,
+		defaultKeys: defaultCountKeys(),
 	}
 }
 
@@ -290,7 +288,7 @@ func (s *CountSink) keyFieldFor(module string) string {
 	if s.keyField != "" {
 		return s.keyField
 	}
-	if f, ok := defaultKeyFields[module]; ok {
+	if f, ok := s.defaultKeys[module]; ok {
 		return f
 	}
 	return "comm"

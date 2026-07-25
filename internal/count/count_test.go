@@ -2,10 +2,44 @@ package count
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/PranavRJoshi/Veil/internal/registry"
 )
+
+/*
+	The count-by defaults and valid fields are now derived from the module
+	registry, so the tests register the same DefaultCountKey/CountFields the
+	real modules declare. This mirrors the module registrations without
+	importing the module packages (which would pull in cilium/ebpf).
+*/
+func TestMain(m *testing.M) {
+	registry.Reset()
+	registry.Register(registry.ModuleInfo{
+		Name: "syscall", DefaultCountKey: "syscall",
+		CountFields: []string{"syscall", "syscall_nr"},
+	})
+	registry.Register(registry.ModuleInfo{
+		Name: "files", DefaultCountKey: "filename",
+		CountFields: []string{"filename", "op"},
+	})
+	registry.Register(registry.ModuleInfo{
+		Name: "network", DefaultCountKey: "dport",
+		CountFields: []string{"saddr", "daddr", "sport", "dport", "evt_type", "oldstate", "newstate"},
+	})
+	registry.Register(registry.ModuleInfo{
+		Name: "scheduler", DefaultCountKey: "next_comm",
+		CountFields: []string{"prev_pid", "next_pid", "prev_tid", "next_tid", "cpu", "prev_state", "prev_prio", "next_prio", "prev_comm", "next_comm"},
+	})
+	registry.Register(registry.ModuleInfo{
+		Name: "memory", DefaultCountKey: "evt_type",
+		CountFields: []string{"evt_type", "address"},
+	})
+	os.Exit(m.Run())
+}
 
 // ---------------------------------------------------------------------------
 // helpers
