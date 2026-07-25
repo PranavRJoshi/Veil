@@ -18,7 +18,7 @@ jobs:
       # independent decoder and they fail independently.
       fail-fast: false
       matrix:
-        module: [files, syscall, scheduler, memory]
+        module: [files, syscall, scheduler, memory, network]
 
     name: fuzz (${{ matrix.module }})
 
