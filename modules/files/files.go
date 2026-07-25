@@ -33,7 +33,8 @@ func init() {
 			{Name: "op", Description: "Filter by operation: open, read, write (comma-separated)", HasValue: true},
 			{Name: "file", Description: "Filter by path: /abs/path (exact), /dir/ (prefix), rel/path (suffix), name (substring)", HasValue: true},
 		},
-		MapNames: []string{"pid", "uid", "pid_deny", "uid_deny"},
+		MapNames:  []string{"pid", "uid", "pid_deny", "uid_deny"},
+		Formatter: textFormat,
 		Factory: func(flags map[string]string, sink output.EventSink) (runner.Module, error) {
 			filter, err := ParseFilterConfig(flags)
 			if err != nil {

@@ -108,7 +108,7 @@ func main() {
 	case "json":
 		baseSink = output.NewJSONSink(os.Stdout)
 	default:
-		baseSink = output.NewTextSink(os.Stdout, output.DispatchTextFormat())
+		baseSink = output.NewTextSink(os.Stdout, output.DispatchTextFormat(moduleFormatters()))
 	}
 	pausable := output.NewPausableSink(baseSink)
 	defer baseSink.Close()
@@ -356,6 +356,21 @@ func parseModuleNames(raw string) []string {
 	If a module doesn't implement MapUpdater, it gets a stub entry that reports
 	status but rejects filter modification.
 */
+/*
+	moduleFormatters builds the module-name to text-formatter map that the
+	text sink dispatches on, from each registered module's Formatter. Lives
+	here because internal/output cannot import the registry.
+*/
+func moduleFormatters() map[string]output.TextFormatFunc {
+	formatters := make(map[string]output.TextFormatFunc)
+	for _, info := range registry.All() {
+		if info.Formatter != nil {
+			formatters[info.Name] = info.Formatter
+		}
+	}
+	return formatters
+}
+
 func buildUpdater(modules []runner.Module, names []string) control.MapUpdater {
 	updaters := make(map[string]control.MapUpdater, len(modules))
 	for i, mod := range modules {

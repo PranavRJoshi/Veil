@@ -50,6 +50,7 @@ type ModuleInfo struct {
 	Flags       []FlagDef
 	MapNames    []string // BPF filter map names owned by this module (e.g. "pid", "uid")
 	Factory     ModuleFactory
+	Formatter   output.TextFormatFunc // renders an event as a text line
 }
 
 var (

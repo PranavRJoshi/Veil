@@ -41,7 +41,8 @@ func init() {
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
 			{Name: "fault", Short: "", Description: "Filter by fault type: major, minor (comma-separated)", HasValue: true},
 		},
-		MapNames: []string{"pid", "uid", "fault", "pid_deny", "uid_deny", "fault_deny"},
+		MapNames:  []string{"pid", "uid", "fault", "pid_deny", "uid_deny", "fault_deny"},
+		Formatter: textFormat,
 		Factory: func(flags map[string]string, sink output.EventSink) (runner.Module, error) {
 			filter, err := ParseFilterConfig(flags)
 			if err != nil {
