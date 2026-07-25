@@ -28,22 +28,22 @@ func (f *FilesModule) initMapUpdater() {
 		Filters: map[string]bpfutil.FilterMeta{
 			"pid": {
 				BpfMap:  f.objs.PidFilter,
-				Bit:     1,
+				Bit:     bpfutil.BitPID,
 				KeySize: 4,
 			},
 			"uid": {
 				BpfMap:  f.objs.UidFilter,
-				Bit:     2,
+				Bit:     bpfutil.BitUID,
 				KeySize: 4,
 			},
 			"pid_deny": {
 				BpfMap:  f.objs.PidDeny,
-				Bit:     8,
+				Bit:     bpfutil.BitPIDDeny,
 				KeySize: 4,
 			},
 			"uid_deny": {
 				BpfMap:  f.objs.UidDeny,
-				Bit:     16,
+				Bit:     bpfutil.BitUIDDeny,
 				KeySize: 4,
 			},
 		},

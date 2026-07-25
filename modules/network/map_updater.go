@@ -29,32 +29,32 @@ func (n *NetworkModule) initMapUpdater() {
 		Filters: map[string]bpfutil.FilterMeta{
 			"pid": {
 				BpfMap:  n.objs.PidFilter,
-				Bit:     1,
+				Bit:     bpfutil.BitPID,
 				KeySize: 4,
 			},
 			"uid": {
 				BpfMap:  n.objs.UidFilter,
-				Bit:     2,
+				Bit:     bpfutil.BitUID,
 				KeySize: 4,
 			},
 			"port": {
 				BpfMap:  n.objs.PortFilter,
-				Bit:     4,
+				Bit:     bpfutil.BitSpecific,
 				KeySize: 2,
 			},
 			"pid_deny": {
 				BpfMap:  n.objs.PidDeny,
-				Bit:     8,
+				Bit:     bpfutil.BitPIDDeny,
 				KeySize: 4,
 			},
 			"uid_deny": {
 				BpfMap:  n.objs.UidDeny,
-				Bit:     16,
+				Bit:     bpfutil.BitUIDDeny,
 				KeySize: 4,
 			},
 			"port_deny": {
 				BpfMap:  n.objs.PortDeny,
-				Bit:     32,
+				Bit:     bpfutil.BitSpecificDeny,
 				KeySize: 2,
 			},
 		},

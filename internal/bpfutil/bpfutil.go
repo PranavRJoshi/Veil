@@ -16,12 +16,75 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+// Bitmask positions in filter_cfg[0]. Every module shares this convention,
+// and it must match the (mask & N) checks in each BPF program.
+const (
+	BitPID          uint32 = 1
+	BitUID          uint32 = 2
+	BitSpecific     uint32 = 4
+	BitPIDDeny      uint32 = 8
+	BitUIDDeny      uint32 = 16
+	BitSpecificDeny uint32 = 32
+)
+
 // FilterMeta describes one BPF filter map and its bitmask position in
 // the filter_cfg array.
 type FilterMeta struct {
 	BpfMap  *ebpf.Map
 	Bit     uint32
 	KeySize int // bytes: 2=uint16 (port), 4=uint32 (pid/uid), 8=uint64 (syscall)
+}
+
+// FilterSpec describes one filter dimension to load at startup: the map to
+// write, its bit in filter_cfg, its key width, and the values to insert.
+type FilterSpec struct {
+	Map     *ebpf.Map
+	Bit     uint32
+	KeySize int
+	Values  []uint64
+}
+
+// PopulateFilters writes each spec's values into its map, sets that spec's
+// bit in the mask when it has any values, and writes the final mask to
+// cfgMap[0]. Specs with no values are skipped. This replaces the
+// hand-written mask-building loop each module used to carry.
+func PopulateFilters(cfgMap *ebpf.Map, specs []FilterSpec) error {
+	var mask uint32
+	for _, s := range specs {
+		if len(s.Values) == 0 {
+			continue
+		}
+		mask |= s.Bit
+		for _, v := range s.Values {
+			if err := UpdateMapKey(s.Map, v, 1, s.KeySize); err != nil {
+				return fmt.Errorf("populate filter (bit %d): %w", s.Bit, err)
+			}
+		}
+	}
+	if mask != 0 {
+		if err := cfgMap.Update(uint32(0), mask, ebpf.UpdateAny); err != nil {
+			return fmt.Errorf("write filter_cfg: %w", err)
+		}
+	}
+	return nil
+}
+
+// WidenU32 converts a uint32 filter slice to the []uint64 FilterSpec carries.
+func WidenU32(vals []uint32) []uint64 {
+	out := make([]uint64, len(vals))
+	for i, v := range vals {
+		out[i] = uint64(v)
+	}
+	return out
+}
+
+// WidenU16 converts a uint16 filter slice to the []uint64 FilterSpec carries.
+func WidenU16(vals []uint16) []uint64 {
+	out := make([]uint64, len(vals))
+	for i, v := range vals {
+		out[i] = uint64(v)
+	}
+	return out
 }
 
 // MapUpdaterState holds the mutable state for runtime BPF filter control.

@@ -29,32 +29,32 @@ func (t *TracerModule) initMapUpdater() {
 		Filters: map[string]bpfutil.FilterMeta{
 			"pid": {
 				BpfMap:  t.objs.PidFilter,
-				Bit:     1,
+				Bit:     bpfutil.BitPID,
 				KeySize: 4,
 			},
 			"uid": {
 				BpfMap:  t.objs.UidFilter,
-				Bit:     2,
+				Bit:     bpfutil.BitUID,
 				KeySize: 4,
 			},
 			"syscall": {
 				BpfMap:  t.objs.SyscallFilter,
-				Bit:     4,
+				Bit:     bpfutil.BitSpecific,
 				KeySize: 8,
 			},
 			"pid_deny": {
 				BpfMap:  t.objs.PidDeny,
-				Bit:     8,
+				Bit:     bpfutil.BitPIDDeny,
 				KeySize: 4,
 			},
 			"uid_deny": {
 				BpfMap:  t.objs.UidDeny,
-				Bit:     16,
+				Bit:     bpfutil.BitUIDDeny,
 				KeySize: 4,
 			},
 			"syscall_deny": {
 				BpfMap:  t.objs.SyscallDeny,
-				Bit:     32,
+				Bit:     bpfutil.BitSpecificDeny,
 				KeySize: 8,
 			},
 		},

@@ -14,7 +14,6 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 )
@@ -204,61 +203,12 @@ func New(filter FilterConfig, sink output.EventSink) *FilesModule {
 		bit 4 = uid_deny filter active
 */
 func (f *FilesModule) populateFilters() error {
-	var mask uint32
-	enable := uint8(1)
-
-	/*
-		The implementation detail for populating the filters are described in
-		the syscall tracing module. The semantic is identical with the syscall
-		module.
-	*/
-	if len(f.filter.PIDs) > 0 {
-		mask |= 1
-		for _, pid := range f.filter.PIDs {
-			if err := f.objs.PidFilter.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("files: set pid filter %d: %w", pid, err)
-			}
-		}
-	}
-
-	if len(f.filter.UIDs) > 0 {
-		mask |= 2
-		for _, uid := range f.filter.UIDs {
-			if err := f.objs.UidFilter.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("files: set uid filter %d: %w", uid, err)
-			}
-		}
-	}
-
-	/*
-		Populate deny PID and UID filter maps
-	*/
-	if len(f.filter.DenyPIDs) > 0 {
-		mask |= 8
-		for _, pid := range f.filter.DenyPIDs {
-			if err := f.objs.PidDeny.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("files: set pid deny filter %d: %w", pid, err)
-			}
-		}
-	}
-
-	if len(f.filter.DenyUIDs) > 0 {
-		mask |= 16
-		for _, uid := range f.filter.DenyUIDs {
-			if err := f.objs.UidDeny.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("files: set uid deny filter %d: %w", uid, err)
-			}
-		}
-	}
-
-	if mask != 0 {
-		cfgKey := uint32(0)
-		if err := f.objs.FilterCfg.Update(cfgKey, mask, ebpf.UpdateAny); err != nil {
-			return fmt.Errorf("files: set filter config: %w", err)
-		}
-	}
-
-	return nil
+	return bpfutil.PopulateFilters(f.objs.FilterCfg, []bpfutil.FilterSpec{
+		{Map: f.objs.PidFilter, Bit: bpfutil.BitPID, KeySize: 4, Values: bpfutil.WidenU32(f.filter.PIDs)},
+		{Map: f.objs.UidFilter, Bit: bpfutil.BitUID, KeySize: 4, Values: bpfutil.WidenU32(f.filter.UIDs)},
+		{Map: f.objs.PidDeny, Bit: bpfutil.BitPIDDeny, KeySize: 4, Values: bpfutil.WidenU32(f.filter.DenyPIDs)},
+		{Map: f.objs.UidDeny, Bit: bpfutil.BitUIDDeny, KeySize: 4, Values: bpfutil.WidenU32(f.filter.DenyUIDs)},
+	})
 }
 
 /*

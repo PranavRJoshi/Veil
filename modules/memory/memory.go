@@ -26,7 +26,6 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 )
@@ -196,78 +195,14 @@ func New(filter FilterConfig, sink output.EventSink) *MemoryModule {
 		bit 5 = fault type deny
 */
 func (m *MemoryModule) populateFilters() error {
-	var mask uint32
-	enable := uint8(1)
-
-	/* PID allow filter */
-	if len(m.filter.PIDs) > 0 {
-		mask |= 1
-		for _, pid := range m.filter.PIDs {
-			if err := m.objs.PidFilter.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("memory: update pid_filter: %w", err)
-			}
-		}
-	}
-
-	/* PID deny filter */
-	if len(m.filter.DenyPIDs) > 0 {
-		mask |= 8
-		for _, pid := range m.filter.DenyPIDs {
-			if err := m.objs.PidDeny.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("memory: update pid_deny: %w", err)
-			}
-		}
-	}
-
-	/* UID allow filter */
-	if len(m.filter.UIDs) > 0 {
-		mask |= 2
-		for _, uid := range m.filter.UIDs {
-			if err := m.objs.UidFilter.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("memory: update uid_filter: %w", err)
-			}
-		}
-	}
-
-	/* UID deny filter */
-	if len(m.filter.DenyUIDs) > 0 {
-		mask |= 16
-		for _, uid := range m.filter.DenyUIDs {
-			if err := m.objs.UidDeny.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("memory: update uid_deny: %w", err)
-			}
-		}
-	}
-
-	/* Fault type allow filter */
-	if len(m.filter.FaultTypes) > 0 {
-		mask |= 4
-		for _, ft := range m.filter.FaultTypes {
-			if err := m.objs.FaultFilter.Update(ft, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("memory: update fault_filter: %w", err)
-			}
-		}
-	}
-
-	/* Fault type deny filter */
-	if len(m.filter.DenyFaults) > 0 {
-		mask |= 32
-		for _, ft := range m.filter.DenyFaults {
-			if err := m.objs.FaultDeny.Update(ft, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("memory: update fault_deny: %w", err)
-			}
-		}
-	}
-
-	/* Write the bitmask */
-	if mask != 0 {
-		cfgKey := uint32(0)
-		if err := m.objs.FilterCfg.Update(cfgKey, mask, ebpf.UpdateAny); err != nil {
-			return fmt.Errorf("memory: update filter_cfg: %w", err)
-		}
-	}
-
-	return nil
+	return bpfutil.PopulateFilters(m.objs.FilterCfg, []bpfutil.FilterSpec{
+		{Map: m.objs.PidFilter, Bit: bpfutil.BitPID, KeySize: 4, Values: bpfutil.WidenU32(m.filter.PIDs)},
+		{Map: m.objs.UidFilter, Bit: bpfutil.BitUID, KeySize: 4, Values: bpfutil.WidenU32(m.filter.UIDs)},
+		{Map: m.objs.FaultFilter, Bit: bpfutil.BitSpecific, KeySize: 4, Values: bpfutil.WidenU32(m.filter.FaultTypes)},
+		{Map: m.objs.PidDeny, Bit: bpfutil.BitPIDDeny, KeySize: 4, Values: bpfutil.WidenU32(m.filter.DenyPIDs)},
+		{Map: m.objs.UidDeny, Bit: bpfutil.BitUIDDeny, KeySize: 4, Values: bpfutil.WidenU32(m.filter.DenyUIDs)},
+		{Map: m.objs.FaultDeny, Bit: bpfutil.BitSpecificDeny, KeySize: 4, Values: bpfutil.WidenU32(m.filter.DenyFaults)},
+	})
 }
 
 func (m *MemoryModule) Load() error {

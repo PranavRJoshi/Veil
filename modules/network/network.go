@@ -47,7 +47,6 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 )
@@ -208,74 +207,14 @@ func New(filter FilterConfig, sink output.EventSink) *NetworkModule {
 		bit 5 = port_deny filter active
 */
 func (n *NetworkModule) populateFilters() error {
-	var mask uint32
-	enable := uint8(1)
-
-	if len(n.filter.PIDs) > 0 {
-		mask |= 1
-		for _, pid := range n.filter.PIDs {
-			if err := n.objs.PidFilter.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("network: set pid filter %d: %w", pid, err)
-			}
-		}
-	}
-
-	if len(n.filter.UIDs) > 0 {
-		mask |= 2
-		for _, uid := range n.filter.UIDs {
-			if err := n.objs.UidFilter.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("network: set uid filter %d: %w", uid, err)
-			}
-		}
-	}
-
-	if len(n.filter.Ports) > 0 {
-		mask |= 4
-		for _, port := range n.filter.Ports {
-			if err := n.objs.PortFilter.Update(port, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("network: set port filter %d: %w", port, err)
-			}
-		}
-	}
-
-	/* Populate deny PID filter map */
-	if len(n.filter.DenyPIDs) > 0 {
-		mask |= 8
-		for _, pid := range n.filter.DenyPIDs {
-			if err := n.objs.PidDeny.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("network: set pid deny filter %d: %w", pid, err)
-			}
-		}
-	}
-
-	/* Populate deny UID filter map */
-	if len(n.filter.DenyUIDs) > 0 {
-		mask |= 16
-		for _, uid := range n.filter.DenyUIDs {
-			if err := n.objs.UidDeny.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("network: set uid deny filter %d: %w", uid, err)
-			}
-		}
-	}
-
-	/* Populate deny port filter map */
-	if len(n.filter.DenyPorts) > 0 {
-		mask |= 32
-		for _, port := range n.filter.DenyPorts {
-			if err := n.objs.PortDeny.Update(port, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("network: set port deny filter %d: %w", port, err)
-			}
-		}
-	}
-
-	if mask != 0 {
-		cfgKey := uint32(0)
-		if err := n.objs.FilterCfg.Update(cfgKey, mask, ebpf.UpdateAny); err != nil {
-			return fmt.Errorf("network: set filter config: %w", err)
-		}
-	}
-
-	return nil
+	return bpfutil.PopulateFilters(n.objs.FilterCfg, []bpfutil.FilterSpec{
+		{Map: n.objs.PidFilter, Bit: bpfutil.BitPID, KeySize: 4, Values: bpfutil.WidenU32(n.filter.PIDs)},
+		{Map: n.objs.UidFilter, Bit: bpfutil.BitUID, KeySize: 4, Values: bpfutil.WidenU32(n.filter.UIDs)},
+		{Map: n.objs.PortFilter, Bit: bpfutil.BitSpecific, KeySize: 2, Values: bpfutil.WidenU16(n.filter.Ports)},
+		{Map: n.objs.PidDeny, Bit: bpfutil.BitPIDDeny, KeySize: 4, Values: bpfutil.WidenU32(n.filter.DenyPIDs)},
+		{Map: n.objs.UidDeny, Bit: bpfutil.BitUIDDeny, KeySize: 4, Values: bpfutil.WidenU32(n.filter.DenyUIDs)},
+		{Map: n.objs.PortDeny, Bit: bpfutil.BitSpecificDeny, KeySize: 2, Values: bpfutil.WidenU16(n.filter.DenyPorts)},
+	})
 }
 
 /*

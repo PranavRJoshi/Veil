@@ -29,32 +29,32 @@ func (m *MemoryModule) initMapUpdater() {
 		Filters: map[string]bpfutil.FilterMeta{
 			"pid": {
 				BpfMap:  m.objs.PidFilter,
-				Bit:     1,
+				Bit:     bpfutil.BitPID,
 				KeySize: 4,
 			},
 			"uid": {
 				BpfMap:  m.objs.UidFilter,
-				Bit:     2,
+				Bit:     bpfutil.BitUID,
 				KeySize: 4,
 			},
 			"fault": {
 				BpfMap:  m.objs.FaultFilter,
-				Bit:     4,
+				Bit:     bpfutil.BitSpecific,
 				KeySize: 4,
 			},
 			"pid_deny": {
 				BpfMap:  m.objs.PidDeny,
-				Bit:     8,
+				Bit:     bpfutil.BitPIDDeny,
 				KeySize: 4,
 			},
 			"uid_deny": {
 				BpfMap:  m.objs.UidDeny,
-				Bit:     16,
+				Bit:     bpfutil.BitUIDDeny,
 				KeySize: 4,
 			},
 			"fault_deny": {
 				BpfMap:  m.objs.FaultDeny,
-				Bit:     32,
+				Bit:     bpfutil.BitSpecificDeny,
 				KeySize: 4,
 			},
 		},

@@ -25,7 +25,6 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 )
@@ -176,78 +175,14 @@ func New(filter FilterConfig, sink output.EventSink) *SchedulerModule {
 		bit 5 = cpu deny
 */
 func (t *SchedulerModule) populateFilters() error {
-	var mask uint32
-	enable := uint8(1)
-
-	/* PID allow filter */
-	if len(t.filter.PIDs) > 0 {
-		mask |= 1
-		for _, pid := range t.filter.PIDs {
-			if err := t.objs.PidFilter.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("scheduler: update pid_filter: %w", err)
-			}
-		}
-	}
-
-	/* PID deny filter */
-	if len(t.filter.DenyPIDs) > 0 {
-		mask |= 8
-		for _, pid := range t.filter.DenyPIDs {
-			if err := t.objs.PidDeny.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("scheduler: update pid_deny: %w", err)
-			}
-		}
-	}
-
-	/* UID allow filter */
-	if len(t.filter.UIDs) > 0 {
-		mask |= 2
-		for _, uid := range t.filter.UIDs {
-			if err := t.objs.UidFilter.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("scheduler: update uid_filter: %w", err)
-			}
-		}
-	}
-
-	/* UID deny filter */
-	if len(t.filter.DenyUIDs) > 0 {
-		mask |= 16
-		for _, uid := range t.filter.DenyUIDs {
-			if err := t.objs.UidDeny.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("scheduler: update uid_deny: %w", err)
-			}
-		}
-	}
-
-	/* CPU allow filter */
-	if len(t.filter.CPUs) > 0 {
-		mask |= 4
-		for _, cpu := range t.filter.CPUs {
-			if err := t.objs.CpuFilter.Update(cpu, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("scheduler: update cpu_filter: %w", err)
-			}
-		}
-	}
-
-	/* CPU deny filter */
-	if len(t.filter.DenyCPUs) > 0 {
-		mask |= 32
-		for _, cpu := range t.filter.DenyCPUs {
-			if err := t.objs.CpuDeny.Update(cpu, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("scheduler: update cpu_deny: %w", err)
-			}
-		}
-	}
-
-	/* Write the bitmask */
-	if mask != 0 {
-		cfgKey := uint32(0)
-		if err := t.objs.FilterCfg.Update(cfgKey, mask, ebpf.UpdateAny); err != nil {
-			return fmt.Errorf("scheduler: update filter_cfg: %w", err)
-		}
-	}
-
-	return nil
+	return bpfutil.PopulateFilters(t.objs.FilterCfg, []bpfutil.FilterSpec{
+		{Map: t.objs.PidFilter, Bit: bpfutil.BitPID, KeySize: 4, Values: bpfutil.WidenU32(t.filter.PIDs)},
+		{Map: t.objs.UidFilter, Bit: bpfutil.BitUID, KeySize: 4, Values: bpfutil.WidenU32(t.filter.UIDs)},
+		{Map: t.objs.CpuFilter, Bit: bpfutil.BitSpecific, KeySize: 4, Values: bpfutil.WidenU32(t.filter.CPUs)},
+		{Map: t.objs.PidDeny, Bit: bpfutil.BitPIDDeny, KeySize: 4, Values: bpfutil.WidenU32(t.filter.DenyPIDs)},
+		{Map: t.objs.UidDeny, Bit: bpfutil.BitUIDDeny, KeySize: 4, Values: bpfutil.WidenU32(t.filter.DenyUIDs)},
+		{Map: t.objs.CpuDeny, Bit: bpfutil.BitSpecificDeny, KeySize: 4, Values: bpfutil.WidenU32(t.filter.DenyCPUs)},
+	})
 }
 
 func (t *SchedulerModule) Load() error {

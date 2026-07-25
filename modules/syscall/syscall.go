@@ -39,7 +39,6 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 )
@@ -206,105 +205,40 @@ func New(filter FilterConfig, sink output.EventSink) *TracerModule {
 		bit 5 = syscall_deny filter active
 */
 func (t *TracerModule) populateFilters() error {
-	var mask uint32
-	enable := uint8(1)
-
-	/*
-		The data type TracerObjects embeds TracerPrograms and TracerMaps.
-		TracerMaps defines the fields such as PidFilter, UidFilter, SyscallFilter,
-		and a couple more fields. The data type of these fields are ebpf.Map.
-		This data type is defined in cilium/ebpf/map.go file. Under the same file,
-		the method Update is defined, which is shown in the link below:
-			- https://github.com/cilium/ebpf/blob/main/map.go#L1030-L1042C2
-
-		The mask variable is used to keep track of the filters that should be applied
-		and is used for filter_cfg map that we defined in bpf program file. For PIDs,
-		UIDs, and syscall filters, we simply extract the value from the array and
-		Update the map.
-
-		TODO: The bpf program has a compile time constant for the length of hash map
-		used for PID, UID, and Syscall number. Those numbers are sufficient for most
-		usual execution, but it'd be better if the program here is also able to take
-		that fact into account.
-	*/
-
-	/* Populate PID filter map */
-	if len(t.filter.PIDs) > 0 {
-		mask |= 1
-		for _, pid := range t.filter.PIDs {
-			if err := t.objs.PidFilter.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("syscall: set pid filter %d: %w", pid, err)
-			}
-		}
+	syscalls, err := resolveSyscalls(t.filter.Syscalls)
+	if err != nil {
+		return err
+	}
+	denySyscalls, err := resolveSyscalls(t.filter.DenySyscalls)
+	if err != nil {
+		return err
 	}
 
-	/* Populate UID filter map */
-	if len(t.filter.UIDs) > 0 {
-		mask |= 2
-		for _, uid := range t.filter.UIDs {
-			if err := t.objs.UidFilter.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("syscall: set uid filter %d: %w", uid, err)
-			}
-		}
-	}
+	return bpfutil.PopulateFilters(t.objs.FilterCfg, []bpfutil.FilterSpec{
+		{Map: t.objs.PidFilter, Bit: bpfutil.BitPID, KeySize: 4, Values: bpfutil.WidenU32(t.filter.PIDs)},
+		{Map: t.objs.UidFilter, Bit: bpfutil.BitUID, KeySize: 4, Values: bpfutil.WidenU32(t.filter.UIDs)},
+		{Map: t.objs.SyscallFilter, Bit: bpfutil.BitSpecific, KeySize: 8, Values: syscalls},
+		{Map: t.objs.PidDeny, Bit: bpfutil.BitPIDDeny, KeySize: 4, Values: bpfutil.WidenU32(t.filter.DenyPIDs)},
+		{Map: t.objs.UidDeny, Bit: bpfutil.BitUIDDeny, KeySize: 4, Values: bpfutil.WidenU32(t.filter.DenyUIDs)},
+		{Map: t.objs.SyscallDeny, Bit: bpfutil.BitSpecificDeny, KeySize: 8, Values: denySyscalls},
+	})
+}
 
-	/* Populate syscall number filter map: resolve names to numbers */
-	if len(t.filter.Syscalls) > 0 { /* check if the user specified particular syscall */
-		mask |= 4
-		for _, name := range t.filter.Syscalls {
-			nr, ok := SyscallNumber(name) /* defined in syscall_table.go */
-			if !ok {
-				return fmt.Errorf("syscall: unknown syscall name %q", name)
-			}
-			if err := t.objs.SyscallFilter.Update(nr, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("syscall: set syscall filter %q (%d): %w", name, nr, err)
-			}
+/*
+	resolveSyscalls maps each syscall name to its number via SyscallNumber
+	(generated in syscall_table.go), erroring on an unknown name. Used for
+	both the allow and deny lists.
+*/
+func resolveSyscalls(names []string) ([]uint64, error) {
+	out := make([]uint64, 0, len(names))
+	for _, name := range names {
+		nr, ok := SyscallNumber(name)
+		if !ok {
+			return nil, fmt.Errorf("syscall: unknown syscall name %q", name)
 		}
+		out = append(out, nr)
 	}
-
-	/* Populate deny PID filter map */
-	if len(t.filter.DenyPIDs) > 0 {
-		mask |= 8
-		for _, pid := range t.filter.DenyPIDs {
-			if err := t.objs.PidDeny.Update(pid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("syscall: set pid deny filter %d: %w", pid, err)
-			}
-		}
-	}
-
-	/* Populate deny UID filter map */
-	if len(t.filter.DenyUIDs) > 0 {
-		mask |= 16
-		for _, uid := range t.filter.DenyUIDs {
-			if err := t.objs.UidDeny.Update(uid, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("syscall: set uid deny filter %d: %w", uid, err)
-			}
-		}
-	}
-
-	/* Populate deny syscall filter map */
-	if len(t.filter.DenySyscalls) > 0 {
-		mask |= 32
-		for _, name := range t.filter.DenySyscalls {
-			nr, ok := SyscallNumber(name)
-			if !ok {
-				return fmt.Errorf("syscall: unknown deny syscall name %q", name)
-			}
-			if err := t.objs.SyscallDeny.Update(nr, enable, ebpf.UpdateAny); err != nil {
-				return fmt.Errorf("syscall: set syscall deny filter %q (%d): %w", name, nr, err)
-			}
-		}
-	}
-
-	/* Write the bitmask to filter_cfg[0] */
-	if mask != 0 {
-		cfgKey := uint32(0)
-		if err := t.objs.FilterCfg.Update(cfgKey, mask, ebpf.UpdateAny); err != nil {
-			return fmt.Errorf("syscall: set filter config: %w", err)
-		}
-	}
-
-	return nil
+	return out, nil
 }
 
 /*
