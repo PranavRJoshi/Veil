@@ -60,10 +60,10 @@ func init() {
 		Name:        "network",
 		Description: "TCP connection lifecycle tracing (connect, accept, close)",
 		Flags: []registry.FlagDef{
-			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
-			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
+			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true, Negatable: true},
+			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true, Negatable: true},
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
-			{Name: "port", Description: "Filter by port number (comma-separated)", HasValue: true},
+			{Name: "port", Description: "Filter by port number (comma-separated)", HasValue: true, Negatable: true},
 		},
 		MapNames:        []string{"pid", "uid", "port", "pid_deny", "uid_deny", "port_deny"},
 		Formatter:       textFormat,

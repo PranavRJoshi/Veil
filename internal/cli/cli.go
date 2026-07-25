@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/PranavRJoshi/Veil/internal/registry"
@@ -24,11 +25,7 @@ type Config struct {
 	ShowHelp    bool              /* --help or -h */
 }
 
-/*
-	Print out the usage message to the standard error stream.
-*/
-func usage() {
-	u := `Usage: veil --module <name[,name...>] [module-flags...]
+const globalUsage = `Usage: veil --module <name[,name...]> [module-flags...]
 
 Global flags:
   --module <name>    Select the module to run (required)
@@ -40,43 +37,143 @@ Global flags:
   --control <path>   Start a Unix socket control server at <path>
   --pprof <path>     Write CPU profile to <path> on exit (use with go tool pprof)
   -h, --help         Show this help message
+`
 
-Common filter flags:
-  -p, --pid <pid>    Filter events by process ID (comma-separated)
-  -u, --uid <uid>    Filter events by user ID (comma-separated)
-  -n, --name <n>     Filter events by process name (comm)
-
-Syscall module flags:
-  -s, --syscall <name>  Filter events by syscall name (comma-separated)
-
-Files module flags:
-  --op <op>             Filter by operation: open, read, write (comma-separated)
-  --file <name>         Filter by filename (substring match)
-
-Network module flags:
-  --port <port>         Filter by port number (comma-separated)
-
-Scheduler module flags:
-  --cpu <cpu>           Filter by CPU core (comma-separated)
-
-Memory module flags:
-  --fault <type>        Filter by fault type: major, minor (comma-separated)
-
+const negationUsage = `
 Negation filter examples:
   --pid '!1234'         Exclude PID 1234
   --pid '100,!200'      Allow only PID 100, but never 200
   --syscall '!ioctl'    Exclude ioctl syscalls
   --cpu '!0'            Exclude CPU 0
 `
-	fmt.Fprint(os.Stderr, u)
+
+/*
+	Print out the usage message to the standard error stream. The module
+	flag sections are generated from the registry so adding a module keeps
+	the help in sync automatically.
+*/
+func usage() {
+	var b strings.Builder
+	b.WriteString(globalUsage)
+
+	if shared := sharedFlags(); len(shared) > 0 {
+		b.WriteString("\nCommon filter flags:\n")
+		for _, f := range shared {
+			b.WriteString(flagLine(f))
+		}
+	}
+
+	for _, info := range registry.All() {
+		specific := moduleSpecificFlags(info)
+		if len(specific) == 0 {
+			continue
+		}
+		b.WriteString("\n" + title(info.Name) + " module flags:\n")
+		for _, f := range specific {
+			b.WriteString(flagLine(f))
+		}
+	}
+
+	b.WriteString(negationUsage)
+	fmt.Fprint(os.Stderr, b.String())
+}
+
+/*
+	flagLine renders one flag as a help line.
+*/
+func flagLine(f registry.FlagDef) string {
+	name := "--" + f.Name
+	if f.Short != "" {
+		name = "-" + f.Short + ", " + name
+	}
+	if f.HasValue {
+		name += " <value>"
+	}
+	return fmt.Sprintf("  %-24s %s\n", name, f.Description)
+}
+
+/*
+	sharedFlags returns the flags declared by every registered module (pid,
+	uid, name), sorted by name.
+*/
+func sharedFlags() []registry.FlagDef {
+	all := registry.All()
+	if len(all) == 0 {
+		return nil
+	}
+	counts := make(map[string]int)
+	defs := make(map[string]registry.FlagDef)
+	for _, info := range all {
+		seen := make(map[string]bool)
+		for _, f := range info.Flags {
+			if seen[f.Name] {
+				continue
+			}
+			seen[f.Name] = true
+			counts[f.Name]++
+			defs[f.Name] = f
+		}
+	}
+	var shared []registry.FlagDef
+	for name, c := range counts {
+		if c == len(all) {
+			shared = append(shared, defs[name])
+		}
+	}
+	sort.Slice(shared, func(i, j int) bool { return shared[i].Name < shared[j].Name })
+	return shared
+}
+
+/*
+	moduleSpecificFlags returns a module's flags that are not shared by all
+	modules.
+*/
+func moduleSpecificFlags(info registry.ModuleInfo) []registry.FlagDef {
+	sharedSet := make(map[string]bool)
+	for _, f := range sharedFlags() {
+		sharedSet[f.Name] = true
+	}
+	var specific []registry.FlagDef
+	seen := make(map[string]bool)
+	for _, f := range info.Flags {
+		if sharedSet[f.Name] || seen[f.Name] {
+			continue
+		}
+		seen[f.Name] = true
+		specific = append(specific, f)
+	}
+	return specific
+}
+
+/*
+	title upper-cases the first byte of a module name for the help listing.
+*/
+func title(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+/*
+	buildFlagTable maps every module flag's long and short name to its
+	definition, drawn from the registry.
+*/
+func buildFlagTable() map[string]registry.FlagDef {
+	table := make(map[string]registry.FlagDef)
+	for _, f := range registry.AllFlags() {
+		table["--"+f.Name] = f
+		if f.Short != "" {
+			table["-"+f.Short] = f
+		}
+	}
+	return table
 }
 
 /*
 	A simple parser which linearly parses the command line arguments and
-	appropriately modifies the Config structure.
-
-	We could probably use standard library function such as 'getopt' or
-	similar to parse it though...
+	appropriately modifies the Config structure. Global flags are handled
+	explicitly; module flags are looked up in the registry-derived table.
 */
 func Parse(args []string) (Config, error) {
 	cfg := Config{
@@ -88,6 +185,8 @@ func Parse(args []string) (Config, error) {
 		usage()
 		os.Exit(0)
 	}
+
+	flags := buildFlagTable()
 
 	i := 0 /* used as index for argument vector */
 	/* parse all the supplied command line arguments */
@@ -149,128 +248,37 @@ func Parse(args []string) (Config, error) {
 			i++
 			cfg.PprofPath = args[i]
 
-		/*
-			Short-form: -p, -n, -s all take a value argument.
-			Long-form: --pid, --name, --syscall, --op, --path
-			all take a value argument.
-
-			We normalize them into a consistent key in ModuleFlags.
-		*/
-		case arg == "-p" || arg == "--pid":
-			if i+1 >= len(args) {
-				return cfg, fmt.Errorf("%s requires a value", arg)
-			}
-			i++
-			/*
-				We pass a string that may be a comma separated numbers
-				which may optionally include the '!' character, indicating
-				exclusion (negation). This function returns two strings,
-				which are stored in allow and deny variables below.
-			*/
-			allow, deny := splitAllowDeny(args[i])
-			if allow != "" {
-				cfg.ModuleFlags["pid"] = allow
-			}
-			if deny != "" {
-				cfg.ModuleFlags["pid_deny"] = deny
-			}
-
-		case arg == "-u" || arg == "--uid":
-			if i+1 >= len(args) {
-				return cfg, fmt.Errorf("%s requires a value", arg)
-			}
-			i++
-			allow, deny := splitAllowDeny(args[i])
-			if allow != "" {
-				cfg.ModuleFlags["uid"] = allow
-			}
-			if deny != "" {
-				cfg.ModuleFlags["uid_deny"] = deny
-			}
-
-		case arg == "-n" || arg == "--name":
-			if i+1 >= len(args) {
-				return cfg, fmt.Errorf("%s requires a value", arg)
-			}
-			i++
-			cfg.ModuleFlags["name"] = args[i]
-
-			/* syscall module specific */
-		case arg == "-s" || arg == "--syscall":
-			if i+1 >= len(args) {
-				return cfg, fmt.Errorf("%s requires a value", arg)
-			}
-			i++
-			allow, deny := splitAllowDeny(args[i])
-			if allow != "" {
-				cfg.ModuleFlags["syscall"] = allow
-			}
-			if deny != "" {
-				cfg.ModuleFlags["syscall_deny"] = deny
-			}
-
-			/* file module specific */
-		case arg == "--op":
-			if i+1 >= len(args) {
-				return cfg, fmt.Errorf("--op requires a value")
-			}
-			i++
-			cfg.ModuleFlags["op"] = args[i]
-
-		case arg == "--file":
-			if i+1 >= len(args) {
-				return cfg, fmt.Errorf("--file requires a value")
-			}
-			i++
-			cfg.ModuleFlags["file"] = args[i]
-
-			/* network module specific */
-		case arg == "--port":
-			if i+1 >= len(args) {
-				return cfg, fmt.Errorf("--port requires a value")
-			}
-			i++
-			allow, deny := splitAllowDeny(args[i])
-			if allow != "" {
-				cfg.ModuleFlags["port"] = allow
-			}
-			if deny != "" {
-				cfg.ModuleFlags["port_deny"] = deny
-			}
-
-			/* scheduler module specific */
-		case arg == "--cpu":
-			if i+1 >= len(args) {
-				return cfg, fmt.Errorf("--cpu requires a value")
-			}
-			i++
-			allow, deny := splitAllowDeny(args[i])
-			if allow != "" {
-				cfg.ModuleFlags["cpu"] = allow
-			}
-			if deny != "" {
-				cfg.ModuleFlags["cpu_deny"] = deny
-			}
-
-			/* memory module specific */
-		case arg == "--fault":
-			if i+1 >= len(args) {
-				return cfg, fmt.Errorf("--fault requires a value")
-			}
-			i++
-			allow, deny := splitAllowDeny(args[i])
-			if allow != "" {
-				cfg.ModuleFlags["fault"] = allow
-			}
-			if deny != "" {
-				cfg.ModuleFlags["fault_deny"] = deny
-			}
-
-		case strings.HasPrefix(arg, "-"):
-			return cfg, fmt.Errorf("unknown flag: %s", arg)
-
 		default:
-			return cfg, fmt.Errorf("unexpected argument: %s", arg)
+			/*
+				Module flags are declared per module in the registry. Look
+				the flag up by long or short name; negatable flags split
+				their value into allow and <name>_deny via splitAllowDeny.
+			*/
+			def, ok := flags[arg]
+			switch {
+			case !ok && strings.HasPrefix(arg, "-"):
+				return cfg, fmt.Errorf("unknown flag: %s", arg)
+			case !ok:
+				return cfg, fmt.Errorf("unexpected argument: %s", arg)
+			case !def.HasValue:
+				cfg.ModuleFlags[def.Name] = "true"
+			default:
+				if i+1 >= len(args) {
+					return cfg, fmt.Errorf("%s requires a value", arg)
+				}
+				i++
+				if def.Negatable {
+					allow, deny := splitAllowDeny(args[i])
+					if allow != "" {
+						cfg.ModuleFlags[def.Name] = allow
+					}
+					if deny != "" {
+						cfg.ModuleFlags[def.Name+"_deny"] = deny
+					}
+				} else {
+					cfg.ModuleFlags[def.Name] = args[i]
+				}
+			}
 		}
 
 		i++

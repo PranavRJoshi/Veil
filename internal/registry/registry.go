@@ -37,6 +37,7 @@ type FlagDef struct {
 	Short       string // short flag (e.g. "s"), empty if none
 	Description string // shown in --help
 	HasValue    bool   // true if the flag takes an argument (default true for non-bool)
+	Negatable   bool   // value supports '!' allow/deny splitting into <name> and <name>_deny
 }
 
 // ModuleFactory creates a module instance from parsed CLI flags and an

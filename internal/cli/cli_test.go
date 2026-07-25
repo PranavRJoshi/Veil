@@ -10,25 +10,43 @@ import (
 )
 
 /*
-	TestMain registers fake modules in the registry before running
-	CLI tests. This is necessary because cli.Parse now validates
-	module names against the registry instead of a hardcoded map.
+	TestMain registers fake modules before running CLI tests. Parse builds
+	its flag table from the registry, so the fakes declare the same flags
+	and Negatable settings as the real modules.
 */
 func TestMain(m *testing.M) {
+	noopFactory := func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil }
+	common := []registry.FlagDef{
+		{Name: "pid", Short: "p", HasValue: true, Negatable: true},
+		{Name: "uid", Short: "u", HasValue: true, Negatable: true},
+		{Name: "name", Short: "n", HasValue: true},
+	}
+	withCommon := func(extra ...registry.FlagDef) []registry.FlagDef {
+		return append(append([]registry.FlagDef{}, common...), extra...)
+	}
+
 	registry.Register(registry.ModuleInfo{
-		Name:        "syscall",
-		Description: "test syscall module",
-		Factory:     func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
+		Name: "syscall", Description: "test syscall module", Factory: noopFactory,
+		Flags: withCommon(registry.FlagDef{Name: "syscall", Short: "s", HasValue: true, Negatable: true}),
 	})
 	registry.Register(registry.ModuleInfo{
-		Name:        "files",
-		Description: "test files module",
-		Factory:     func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
+		Name: "files", Description: "test files module", Factory: noopFactory,
+		Flags: withCommon(
+			registry.FlagDef{Name: "op", HasValue: true},
+			registry.FlagDef{Name: "file", HasValue: true},
+		),
 	})
 	registry.Register(registry.ModuleInfo{
-		Name:        "network",
-		Description: "test network module",
-		Factory:     func(map[string]string, output.EventSink) (runner.Module, error) { return nil, nil },
+		Name: "network", Description: "test network module", Factory: noopFactory,
+		Flags: withCommon(registry.FlagDef{Name: "port", HasValue: true, Negatable: true}),
+	})
+	registry.Register(registry.ModuleInfo{
+		Name: "scheduler", Description: "test scheduler module", Factory: noopFactory,
+		Flags: withCommon(registry.FlagDef{Name: "cpu", HasValue: true, Negatable: true}),
+	})
+	registry.Register(registry.ModuleInfo{
+		Name: "memory", Description: "test memory module", Factory: noopFactory,
+		Flags: withCommon(registry.FlagDef{Name: "fault", HasValue: true, Negatable: true}),
 	})
 	os.Exit(m.Run())
 }

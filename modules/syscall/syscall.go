@@ -56,10 +56,10 @@ func init() {
 		Name:        "syscall",
 		Description: "Trace system call events (raw_syscalls:sys_enter)",
 		Flags: []registry.FlagDef{
-			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
-			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
+			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true, Negatable: true},
+			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true, Negatable: true},
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
-			{Name: "syscall", Short: "s", Description: "Filter by syscall name (comma-separated)", HasValue: true},
+			{Name: "syscall", Short: "s", Description: "Filter by syscall name (comma-separated)", HasValue: true, Negatable: true},
 		},
 		MapNames:        []string{"pid", "uid", "syscall", "pid_deny", "uid_deny", "syscall_deny"},
 		Formatter:       textFormat,

@@ -36,10 +36,10 @@ func init() {
 		Name:        "memory",
 		Description: "Page fault tracing (major/minor via handle_mm_fault)",
 		Flags: []registry.FlagDef{
-			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
-			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
+			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true, Negatable: true},
+			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true, Negatable: true},
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
-			{Name: "fault", Short: "", Description: "Filter by fault type: major, minor (comma-separated)", HasValue: true},
+			{Name: "fault", Short: "", Description: "Filter by fault type: major, minor (comma-separated)", HasValue: true, Negatable: true},
 		},
 		MapNames:        []string{"pid", "uid", "fault", "pid_deny", "uid_deny", "fault_deny"},
 		Formatter:       textFormat,

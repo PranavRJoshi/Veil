@@ -27,8 +27,8 @@ func init() {
 		Name:        "files",
 		Description: "Trace file access events (vfs_open, vfs_read, vfs_write)",
 		Flags: []registry.FlagDef{
-			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
-			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
+			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true, Negatable: true},
+			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true, Negatable: true},
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
 			{Name: "op", Description: "Filter by operation: open, read, write (comma-separated)", HasValue: true},
 			{Name: "file", Description: "Filter by path: /abs/path (exact), /dir/ (prefix), rel/path (suffix), name (substring)", HasValue: true},

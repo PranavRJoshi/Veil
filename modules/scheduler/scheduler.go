@@ -35,10 +35,10 @@ func init() {
 		Name:        "scheduler",
 		Description: "Trace context switches (sched:sched_switch)",
 		Flags: []registry.FlagDef{
-			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true},
-			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true},
+			{Name: "pid", Short: "p", Description: "Filter by PID (comma-separated)", HasValue: true, Negatable: true},
+			{Name: "uid", Short: "u", Description: "Filter by UID (comma-separated)", HasValue: true, Negatable: true},
 			{Name: "name", Short: "n", Description: "Filter by process name (comm)", HasValue: true},
-			{Name: "cpu", Short: "", Description: "Filter by CPU core (comma-separated)", HasValue: true},
+			{Name: "cpu", Short: "", Description: "Filter by CPU core (comma-separated)", HasValue: true, Negatable: true},
 		},
 		MapNames:        []string{"pid", "uid", "cpu", "pid_deny", "uid_deny", "cpu_deny"},
 		Formatter:       textFormat,
