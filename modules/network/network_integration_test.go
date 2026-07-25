@@ -182,7 +182,15 @@ func TestIntegrationNetworkPortFilterMatchesEitherEnd(t *testing.T) {
 	stop := testutil.StartModule(t, mod)
 
 	connectOnce(t, ln)
+
+	/*
+		Wait for a match on each end before stopping. The client side
+		(CONNECT, dport) is produced first; the server side (ESTABLISHED,
+		sport) arrives slightly later, so stopping on the first would race
+		the second out of the capture.
+	*/
 	sink.WaitFor(t, testutil.DefaultTimeout, evtOn("CONNECT", "dport", port))
+	sink.WaitFor(t, testutil.DefaultTimeout, evtOn("ESTABLISHED", "sport", port))
 	stop()
 
 	want := strconv.FormatUint(uint64(port), 10)
