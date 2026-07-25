@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/chzyer/readline"
 )
 
@@ -57,7 +58,7 @@ func (h *Handler) HandleCommand(line string) string {
 
 	switch strings.ToLower(parts[0]) {
 	case "help":
-		return helpText
+		return helpText()
 	case "status":
 		return h.updater.Status()
 	case "add":
@@ -296,18 +297,10 @@ this function is running.
 func Interactive(h *Handler, w io.Writer, cancel <-chan struct{}) InteractiveResult {
 	fmt.Fprintln(w, "\nVeil interactive control (type 'help' for commands, 'resume' to continue tracing, 'quit' to exit)")
 
-	mapItems := []readline.PrefixCompleterInterface{
-		readline.PcItem("pid"),
-		readline.PcItem("uid"),
-		readline.PcItem("port"),
-		readline.PcItem("syscall"),
-		readline.PcItem("pid_deny"),
-		readline.PcItem("uid_deny"),
-		readline.PcItem("port_deny"),
-		readline.PcItem("cpu"),
-		readline.PcItem("cpu_deny"),
-		readline.PcItem("fault"),
-		readline.PcItem("fault_deny"),
+	names := allMapNames()
+	mapItems := make([]readline.PrefixCompleterInterface, len(names))
+	for i, name := range names {
+		mapItems[i] = readline.PcItem(name)
 	}
 
 	completer := readline.NewPrefixCompleter(
@@ -510,7 +503,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 }
 
-const helpText = `Veil control commands:
+const helpCommands = `Veil control commands:
   add <map> <key>             Add a filter key (e.g. add pid 1234)
   add <module> <map> <key>    Add to a specific module
   del <map> <key>             Remove a filter key
@@ -522,13 +515,100 @@ const helpText = `Veil control commands:
   status                      Show active filters and module state
   resume                      Resume tracing (interactive mode only)
   quit/exit                   Stop Veil and exit
-  help                        Show this help
+  help                        Show this help`
 
-Modules: syscall, files, network, scheduler, memory
-General Map Names: pid, uid
-Syscall Module Map Names: syscall
-Network Module Map Names: port
-Scheduler Module Map Names: cpu
-Memory Module Map Names: fault
-Deny variants: append _deny to any map name (e.g. pid_deny)
-Keys: decimal`
+/*
+	allMapNames returns the sorted, deduplicated set of filter map names
+	across all registered modules, used to drive the completer.
+*/
+func allMapNames() []string {
+	seen := make(map[string]bool)
+	var names []string
+	for _, info := range registry.All() {
+		for _, m := range info.MapNames {
+			if !seen[m] {
+				seen[m] = true
+				names = append(names, m)
+			}
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+/*
+	generalMaps returns the non-deny map names owned by every registered
+	module (pid, uid), as opposed to module-specific ones.
+*/
+func generalMaps() []string {
+	all := registry.All()
+	if len(all) == 0 {
+		return nil
+	}
+	counts := make(map[string]int)
+	for _, info := range all {
+		seen := make(map[string]bool)
+		for _, m := range info.MapNames {
+			if strings.HasSuffix(m, "_deny") || seen[m] {
+				continue
+			}
+			seen[m] = true
+			counts[m]++
+		}
+	}
+	var general []string
+	for m, c := range counts {
+		if c == len(all) {
+			general = append(general, m)
+		}
+	}
+	sort.Strings(general)
+	return general
+}
+
+/*
+	helpText renders the control help, generating the module and map-name
+	listing from the registry so it stays correct as modules change.
+*/
+func helpText() string {
+	var b strings.Builder
+	b.WriteString(helpCommands)
+	b.WriteString("\n\nModules: " + strings.Join(registry.Names(), ", "))
+
+	general := generalMaps()
+	b.WriteString("\nGeneral Map Names: " + strings.Join(general, ", "))
+
+	genSet := make(map[string]bool, len(general))
+	for _, m := range general {
+		genSet[m] = true
+	}
+	for _, info := range registry.All() {
+		var specific []string
+		seen := make(map[string]bool)
+		for _, m := range info.MapNames {
+			if strings.HasSuffix(m, "_deny") || genSet[m] || seen[m] {
+				continue
+			}
+			seen[m] = true
+			specific = append(specific, m)
+		}
+		if len(specific) > 0 {
+			sort.Strings(specific)
+			b.WriteString("\n" + title(info.Name) + " Module Map Names: " + strings.Join(specific, ", "))
+		}
+	}
+
+	b.WriteString("\nDeny variants: append _deny to any map name (e.g. pid_deny)")
+	b.WriteString("\nKeys: decimal")
+	return b.String()
+}
+
+/*
+	title upper-cases the first byte of a module name for the help listing.
+*/
+func title(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
