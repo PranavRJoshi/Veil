@@ -14,6 +14,7 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/count"
 	"github.com/PranavRJoshi/Veil/internal/enrich"
 	"github.com/PranavRJoshi/Veil/internal/exterrs"
+	"github.com/PranavRJoshi/Veil/internal/kernel"
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
@@ -46,6 +47,16 @@ func main() {
 	if cfg.ListModules {
 		cli.PrintModules()
 		os.Exit(0)
+	}
+
+	/*
+		Verify the kernel can run the modules before doing any work, so an
+		unsupported kernel reports what is missing instead of failing with a
+		cryptic load error.
+	*/
+	if err := kernel.Preflight(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 
 	/*
