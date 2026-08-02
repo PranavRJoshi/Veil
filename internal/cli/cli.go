@@ -23,6 +23,7 @@ type Config struct {
 	PprofPath   string            /* --pprof <path>: write CPU profile on exit */
 	ListModules bool              /* --list-modules */
 	ShowHelp    bool              /* --help or -h */
+	AssumeYes   bool              /* --yes: skip high-volume confirmation prompts */
 }
 
 const globalUsage = `Usage: veil --module <name[,name...]> [module-flags...]
@@ -36,6 +37,7 @@ Global flags:
   --count-by <field> Override aggregation key (default: per-module, e.g., syscall, file, dport)
   --control <path>   Start a Unix socket control server at <path>
   --pprof <path>     Write CPU profile to <path> on exit (use with go tool pprof)
+  --yes              Skip confirmation prompts for high-volume tracing
   -h, --help         Show this help message
 `
 
@@ -229,6 +231,9 @@ func Parse(args []string) (Config, error) {
 			}
 			i++
 			cfg.EnrichFlags = args[i]
+
+		case arg == "--yes":
+			cfg.AssumeYes = true
 
 		case arg == "--count":
 			cfg.CountMode = true

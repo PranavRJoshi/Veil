@@ -16,6 +16,7 @@ const (
 	KindFileAccess
 	KindScheduler
 	KindMemory
+	KindUprobe
 )
 
 /*
@@ -33,6 +34,8 @@ func (k EventKind) String() string {
 		return "scheduler"
 	case KindMemory:
 		return "memory"
+	case KindUprobe:
+		return "uprobe"
 	default:
 		return fmt.Sprintf("unknown (%d)", k)
 	}
@@ -117,6 +120,17 @@ type MemoryEvent struct {
 	Event
 	EvtType uint8  /* 0 = major fault, 1 = minor fault */
 	Address uint64 /* faulting virtual address */
+}
+
+/*
+	UprobeEvent represents a userspace function call captured by a
+	uprobe on a user-chosen binary:symbol. DurationNs is the
+	entry-to-return latency in latency mode, and 0 in entry-only mode.
+	The probed symbol is module state, not carried in the record.
+*/
+type UprobeEvent struct {
+	Event
+	DurationNs uint64 /* call latency in ns, 0 when entry-only */
 }
 
 /*

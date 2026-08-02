@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/signal"
@@ -29,6 +30,7 @@ import (
 	_ "github.com/PranavRJoshi/Veil/modules/network"
 	_ "github.com/PranavRJoshi/Veil/modules/scheduler"
 	_ "github.com/PranavRJoshi/Veil/modules/syscall"
+	_ "github.com/PranavRJoshi/Veil/modules/uprobe"
 )
 
 func main() {
@@ -192,6 +194,7 @@ func main() {
 		only the keys it understands and ignores the rest.
 	*/
 	moduleNames := parseModuleNames(cfg.Module)
+
 	var modules []runner.Module
 
 	for _, name := range moduleNames {
@@ -203,6 +206,23 @@ func main() {
 			os.Exit(1)
 		}
 		modules = append(modules, mod)
+	}
+
+	/*
+		Confirm before high-volume tracing floods the terminal. Runs after
+		construction so a config error (a missing --uprobe target) surfaces
+		before the prompt. Only uprobe is wired today; highVolumeReason is
+		the seam for a per-module policy later.
+	*/
+	for _, name := range moduleNames {
+		reason := highVolumeReason(name, cfg.ModuleFlags)
+		if reason == "" {
+			continue
+		}
+		if err := confirmHighVolume(reason, cfg.AssumeYes); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	/*
@@ -359,15 +379,6 @@ func parseModuleNames(raw string) []string {
 }
 
 /*
-	buildUpdater constructs a MapUpdater from the loaded modules. If only one
-	module is loaded and it implements MapUpdater, use it directly (no module
-	prefix needed in commands). For multiple modules, build a
-	compositeUpdater that dispatches by module name.
-
-	If a module doesn't implement MapUpdater, it gets a stub entry that reports
-	status but rejects filter modification.
-*/
-/*
 	moduleFormatters builds the module-name to text-formatter map that the
 	text sink dispatches on, from each registered module's Formatter. Lives
 	here because internal/output cannot import the registry.
@@ -381,6 +392,56 @@ func moduleFormatters() map[string]output.TextFormatFunc {
 	}
 	return formatters
 }
+
+/*
+	highVolumeReason returns a warning message if the module's configuration
+	will flood output, or "" if not. Only uprobe without a pid/uid filter is
+	wired today; this is where a per-module policy would hook in.
+*/
+func highVolumeReason(name string, flags map[string]string) string {
+	if name != "uprobe" {
+		return ""
+	}
+	if flags["pid"] != "" || flags["uid"] != "" {
+		return ""
+	}
+	return fmt.Sprintf("uprobe %q has no --pid/--uid filter and will trace every process", flags["uprobe"])
+}
+
+/*
+	confirmHighVolume guards a firehose action. On a terminal it prompts; with
+	no terminal it refuses unless assumeYes (--yes) is set, so a piped or
+	scripted invocation never blocks on input that will not arrive. The prompt
+	defaults to no: only an explicit "y" proceeds.
+*/
+func confirmHighVolume(reason string, assumeYes bool) error {
+	if assumeYes {
+		return nil
+	}
+
+	info, err := os.Stdin.Stat()
+	interactive := err == nil && info.Mode()&os.ModeCharDevice != 0
+	if !interactive {
+		return fmt.Errorf("%s; pass --pid to filter or --yes to proceed", reason)
+	}
+
+	fmt.Fprintf(os.Stderr, "%s\nProceed? [y/N]: ", reason)
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	if strings.TrimSpace(strings.ToLower(line)) == "y" {
+		return nil
+	}
+	return fmt.Errorf("aborted")
+}
+
+/*
+	buildUpdater constructs a MapUpdater from the loaded modules. If only one
+	module is loaded and it implements MapUpdater, use it directly (no module
+	prefix needed in commands). For multiple modules, build a
+	compositeUpdater that dispatches by module name.
+
+	If a module doesn't implement MapUpdater, it gets a stub entry that reports
+	status but rejects filter modification.
+*/
 
 func buildUpdater(modules []runner.Module, names []string) control.MapUpdater {
 	updaters := make(map[string]control.MapUpdater, len(modules))
