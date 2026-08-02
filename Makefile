@@ -23,17 +23,20 @@ VMLINUX_HEADERS := $(HEADER_DIR)/vmlinux_x86.h $(HEADER_DIR)/vmlinux_arm64.h
 # or a target does not mean editing this file.
 BPF2GO_ARTIFACTS := $(MODULE_DIR)/*/*_bpfe[lb]*.go $(MODULE_DIR)/*/*_bpfe[lb]*.o
 
-.PHONY: all generate regenerate build clean test test-integration
+.PHONY: all help generate regenerate build clean test test-integration test-integration-race
 
-all: generate build
+all: generate build ## Generate BPF objects and build bin/veil
 
-generate: $(VMLINUX_HEADERS)
+help: ## List available targets
+	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}{printf "  %-24s %s\n", $$1, $$2}'
+
+generate: $(VMLINUX_HEADERS) ## Generate vmlinux headers + bpf2go objects (needs clang, bpftool)
 	go generate ./...
 
 # Regenerate from scratch. Needed after changing a bpf2go target, since
 # bpf2go writes new filenames without removing the old ones, and stale
 # objects would collide with the new build constraints.
-regenerate:
+regenerate: ## Clean, then regenerate (after changing a bpf2go target)
 	$(MAKE) clean
 	$(MAKE) generate
 
@@ -53,16 +56,16 @@ $(HEADER_DIR)/vmlinux_arm64.h: $(BTF_DIR)/arm64/$(BTF_RELEASE).btf.tar.xz
 	bpftool btf dump file $(HEADER_DIR)/.btf_arm64.tmp format c > $@
 	@rm -f $(HEADER_DIR)/.btf_arm64.tmp
 
-build:
+build: ## Build bin/veil (Go only, no BPF toolchain)
 	go build -o $(BIN) ./cmd/veil
 
-test:
+test: ## Run unit tests (race, no root)
 	go test -race -count=1 ./...
 
 # Integration tests load real BPF programs, so the test binary needs root.
 # -exec sudo runs only the compiled binary under sudo, keeping the build
 # and the module cache owned by the current user.
-test-integration:
+test-integration: ## Run integration tests (loads BPF, needs sudo)
 	go test -tags integration -exec sudo -count=1 -timeout 5m ./modules/...
 
 # Separate from test-integration rather than folded into it. The race
@@ -70,10 +73,10 @@ test-integration:
 # wall-clock windows, so under -race "no event arrived" becomes easier to
 # satisfy. The non-race run stays the authoritative one; this pass exists
 # to find data races in the modules and the test harness.
-test-integration-race:
+test-integration-race: ## Integration tests under the race detector
 	go test -tags integration -exec sudo -count=1 -race -timeout 10m ./modules/...
 
-clean:
+clean: ## Remove generated files and the binary
 	rm -f $(BIN)
 	rm -f $(VMLINUX_HEADERS) $(HEADER_DIR)/vmlinux.h $(HEADER_DIR)/.btf_*.tmp
 	rm -f $(BPF2GO_ARTIFACTS)

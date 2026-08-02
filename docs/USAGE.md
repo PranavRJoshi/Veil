@@ -11,6 +11,7 @@ Complete CLI reference for all modules, flags, and features.
   - [network](#network-module)
   - [scheduler](#scheduler-module)
   - [memory](#memory-module)
+  - [uprobe](#uprobe-module)
 - [Filtering](#filtering)
   - [Allow Filters](#allow-filters)
   - [Deny Filters (Negation)](#deny-filters-negation)
@@ -39,6 +40,7 @@ Complete CLI reference for all modules, flags, and features.
 | `--count` | Summary mode: suppress live output, show top-N on exit. |
 | `--count-by <field>` | Override aggregation key (implies `--count`). |
 | `--control <path>` | Start a Unix socket control server at the given path. |
+| `--yes` | Skip the confirmation prompt for high-volume tracing (e.g. uprobe without a filter). |
 | `--list-modules` | List available modules and exit. |
 | `-h`, `--help` | Show help message. |
 
@@ -245,6 +247,56 @@ sudo ./bin/veil --module memory -p $(pidof postgres)
 
 # Major faults with enrichment for investigation
 sudo ./bin/veil --module memory --fault major --enrich all --output json
+```
+
+---
+
+### uprobe module
+
+Traces calls to a userspace function via a uprobe on a chosen `binary:symbol`, given at load time with `--uprobe`. Each call emits an event. With `--latency`, a uretprobe is attached too and the entry-to-return duration is reported.
+
+The target is a filesystem path, not a library name: `--uprobe /usr/bin/bash:readline`. The symbol is resolved from the binary's ELF symbol table, so a stripped binary fails with a clear error. Only entry and return timing are captured -- no function arguments -- so the module is architecture-neutral.
+
+To find a symbol, use `nm` or `objdump`. Function symbols appear with type `T` (exported) or `t` (local):
+
+```bash
+# Exported (dynamic) symbols of a shared library
+nm -D /lib/x86_64-linux-gnu/libc.so.6 | grep ' malloc$'
+
+# All symbols of a non-stripped executable
+nm /usr/bin/bash | grep ' readline$'
+
+# objdump works too, and lists only dynamic symbols
+objdump -T /lib/x86_64-linux-gnu/libc.so.6 | grep malloc
+```
+
+If `nm` reports "no symbols", the binary is stripped; only its dynamic (exported) symbols, shown by `nm -D`, remain resolvable.
+
+A uprobe on a hot symbol fires for every process that calls it. When neither `--pid` nor `--uid` is set, Veil prompts for confirmation before starting; pass `--pid`/`--uid` to scope the trace, or `--yes` to skip the prompt. In a non-interactive shell the prompt is declined, so one of those flags is required there.
+
+**Flags:**
+
+| Flag | Short | Description |
+|---|---|---|
+| `--uprobe <path:symbol>` | | Attach target as `path:symbol` (required) |
+| `--latency` | | Also measure call latency via a uretprobe |
+| `--pid <pid>` | `-p` | Filter by PID (comma-separated, supports `!` negation) |
+| `--uid <uid>` | `-u` | Filter by UID (comma-separated, supports `!` negation) |
+| `--name <name>` | `-n` | Filter by process name (substring match, userspace) |
+
+**Output fields:** `comm`, `pid`, `tid`, `uid`, `symbol`, `path`, `duration_ns` (0 in entry-only mode), `timestamp`
+
+**Examples:**
+
+```bash
+# Trace calls to readline in bash
+sudo ./bin/veil --module uprobe --uprobe /usr/bin/bash:readline
+
+# Measure how long each readline call takes
+sudo ./bin/veil --module uprobe --uprobe /usr/bin/bash:readline --latency
+
+# Probe a shared-library function, scoped to one process to avoid a firehose
+sudo ./bin/veil --module uprobe --uprobe /lib/x86_64-linux-gnu/libc.so.6:malloc -p 1234
 ```
 
 ---

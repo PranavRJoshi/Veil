@@ -1,10 +1,53 @@
 # Veil
 
-Veil is an eBPF-based Linux kernel observability toolkit written in Go. It attaches to kernel hooks--tracepoints, kprobes, kretprobes--to trace system calls, file operations, TCP connections, context switches, and page faults with near-zero overhead.
+Veil is an eBPF-based Linux observability tool written in Go. It attaches to
+kernel and userspace hooks -- tracepoints, kprobes, and uprobes -- to trace
+system calls, file access, TCP connections, context switches, page faults,
+and userspace function calls, with kernel-side filtering that keeps overhead
+low.
 
-Events are filtered at the kernel level using BPF hash maps before they ever reach userspace. Filters can be modified at runtime without restarting the tracer.
+## Features
 
-## What It Does
+- **Kernel-level filtering.** Events are matched against BPF hash maps before
+  they reach userspace. Filters have allow and deny variants, and deny wins.
+- **Runtime filter modification.** Add, remove, or clear filters while tracing
+  runs, via an interactive prompt or a Unix control socket -- no restart.
+- **Concurrent modules.** Run several modules at once and share one output
+  stream.
+- **Flexible output.** Text or JSON, with optional enrichment (timestamps,
+  process and user names) and a count/summary mode for top-N aggregation.
+- **Portable objects.** CO-RE with pinned BTF, built per architecture
+  (x86_64, arm64). The generated objects are committed, so a plain build needs
+  no BPF toolchain.
+
+## Modules
+
+- **syscall** -- system calls, via the `raw_syscalls/sys_enter` tracepoint.
+- **files** -- file open, read, and write, via kprobes on the `vfs_*` layer.
+- **network** -- TCP connection lifecycle (IPv4), via the
+  `inet_sock_set_state` tracepoint and kprobes.
+- **scheduler** -- context switches, via the `sched_switch` tracepoint.
+- **memory** -- major and minor page faults, via a kprobe/kretprobe pair on
+  `handle_mm_fault`.
+- **uprobe** -- userspace function calls on a chosen `binary:symbol`, with
+  optional call-latency measurement via a uretprobe.
+
+## Quickstart
+
+Veil runs on Linux 5.8+ (for BTF and ring buffer maps) and needs root, or
+`CAP_BPF` + `CAP_PERFMON`, to load its programs.
+
+```bash
+make                 # generate BPF objects + build -> bin/veil
+make help            # list all available targets
+sudo ./bin/veil --module syscall --pid $(pidof nginx)
+```
+
+Building from source needs Go 1.18+, and regenerating the BPF objects needs
+Clang 14+ and bpftool. The generated objects are committed, so `go build
+./cmd/veil` works without the BPF toolchain when you are not changing the C.
+
+## Examples
 
 ```bash
 # Trace syscalls from nginx, exclude ioctl noise
@@ -22,104 +65,22 @@ sudo ./bin/veil --module scheduler --cpu 0,1,2,3
 # Trace major page faults only
 sudo ./bin/veil --module memory --fault major
 
+# Time a libc call for one process
+sudo ./bin/veil --module uprobe --uprobe /lib/x86_64-linux-gnu/libc.so.6:malloc --latency -p 1234
+
 # Run multiple modules concurrently
 sudo ./bin/veil --module syscall,network,files --enrich all
 ```
 
-## Modules
-
-| Module | What it traces | Kernel hooks | Key filters |
-|---|---|---|---|
-| `syscall` | System calls | `tracepoint/raw_syscalls/sys_enter` | `--syscall`, `--pid`, `--uid` |
-| `files` | File open/read/write | `kprobe/vfs_open`, `vfs_read`, `vfs_write` | `--op`, `--file`, `--pid` |
-| `network` | TCP lifecycle | `tracepoint/sock/inet_sock_set_state` + kprobes | `--port`, `--pid` |
-| `scheduler` | Context switches | `tracepoint/sched/sched_switch` | `--cpu`, `--pid` |
-| `memory` | Page faults | `kprobe`/`kretprobe` on `handle_mm_fault` | `--fault`, `--pid` |
-
-## Architecture
-
-![Veil Architecture](docs/architecture.svg)
-
-> Open [docs/architecture.svg](docs/architecture.svg) directly in a browser for interactive hover tooltips and animated data-flow arrows.
-
-Every module follows the same pattern: a BPF C program defines the kernel-side hook and filter maps, a Go package implements `loader.Program` and `runner.Module`, and an `init()` function self-registers with the module registry. Adding a new module requires no changes to the core; just a blank import in `main.go`.
-
-## Key Design Decisions
-
-**Deny-first filtering.** Every filter map has an allow and deny variant. Deny is checked before allow in the BPF program, so `--pid 100 --pid '!100'` drops PID 100. The `!` prefix in CLI flags drives this via `splitAllowDeny`.
-
 > [!NOTE]
-> During interactive mode, handle the use of `!` character with care as it is interpreted by bash as [_History Expansion_](https://www.gnu.org/software/bash/manual/html_node/History-Interaction.html). As shown in example, wrap the argument inside single quotes.
-
-**Ring buffer over perf buffer.** All modules use `BPF_MAP_TYPE_RINGBUF` (shared, variable-size, no per-CPU waste) rather than perf event arrays.
-
-**Composable output pipeline.** Modules emit to an `EventSink` interface. Sinks compose: `PausableSink` wraps the formatter, `EnrichSink` adds `/proc`-derived fields, `CountSink` aggregates for summary mode. Modules don't know which sinks are active.
-
-**Runtime filter modification.** Every module implements the `MapUpdater` interface, which lets the control server (interactive prompt or Unix socket) add, delete, list, or clear BPF map entries while tracing continues.
-
-## Requirements
-
-| Dependency | Version | Purpose |
-|---|---|---|
-| Go | 1.18+ | Userspace toolchain |
-| Clang | 14.0+ | BPF C compilation |
-| Linux kernel | 5.8+ | BTF and CO-RE support; ring buffer maps |
-| bpftool | any | Generates `vmlinux.h` from running kernel |
-
-Veil requires root privileges (or `CAP_BPF` + `CAP_PERFMON`) to load eBPF programs.
-
-## Building
-
-```bash
-make                # generate BPF code + build binary
-make generate       # BPF code generation only
-make build          # Go build only
-make clean          # remove generated files and binary
-```
-
-`make generate` requires `bpftool` and `clang`. It produces `vmlinux.h` from the running kernel's BTF data and runs `bpf2go` to compile the BPF C programs into Go-embeddable objects.
-
-## Testing
-
-```bash
-go test ./internal/... -v     # core infrastructure, no root needed
-go test ./modules/... -v      # module-level, needs go generate first
-```
-
-Tests cover binary parsing round-trips, filter configuration, output field mapping, and control command dispatch. They do not require root or BPF, they test the Go-side logic using constructed byte buffers.
+> Wrap `!` filters in single quotes. In an interactive shell bash treats `!`
+> as [history expansion](https://www.gnu.org/software/bash/manual/html_node/History-Interaction.html)
+> and will rewrite the argument before Veil sees it.
 
 ## Documentation
 
-See [`docs/USAGE.md`](docs/USAGE.md) for the complete CLI reference with practical examples.
-
-## Project Structure
-
-```
-Veil/
-├── bpf/                # eBPF C programs (kernel-side)
-│   └── headers         # vmlinux.h and shared BPF headers
-├── cmd/                # CLI
-│   ├── gen/            # parse unistd.h from host and gen syscall table
-│   │   └── syscalls
-│   └── veil            # main CLI application
-├── internal/
-│   ├── cli             # Command-line argument parser
-│   ├── control         # Interactive and socket control interface
-│   ├── count           # Count-only mode (suppresses default output)
-│   ├── enrich          # Event enrichment middleware
-│   ├── events          # Shared event types
-│   ├── exterrs         # errors.Join polyfill
-│   ├── loader          # BPF program lifecycle
-│   ├── output          # Output sink pipeline (text, JSON)
-│   ├── registry        # Module self-registration
-│   └── runner          # Multi-module orchestration
-└── modules/
-    ├── files           # File access tracing
-    ├── memory          # Memory fault tracing
-    ├── network         # TCP connection tracing
-    ├── scheduler       # Context switch tracing
-    └── syscall         # System call tracing
-```
+See [`docs/USAGE.md`](docs/USAGE.md) for the complete CLI reference with
+practical examples.
 
 ## License
 
