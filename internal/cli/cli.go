@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/PranavRJoshi/Veil/internal/spec"
 )
 
 /*
@@ -24,6 +25,29 @@ type Config struct {
 	ListModules bool              /* --list-modules */
 	ShowHelp    bool              /* --help or -h */
 	AssumeYes   bool              /* --yes: skip high-volume confirmation prompts */
+}
+
+// ToSpec resolves parsed flags into a spec.Spec. Every module gets the same
+// Flags map.
+func (c Config) ToSpec() spec.Spec {
+	var mods []spec.Module
+	for _, name := range splitModules(c.Module) {
+		mods = append(mods, spec.Module{Name: name, Flags: c.ModuleFlags})
+	}
+	return spec.Spec{
+		Modules: mods,
+		Output: spec.Output{
+			Format:   c.ModuleFlags["output"],
+			Enrich:   c.EnrichFlags,
+			Count:    c.CountMode,
+			CountKey: c.CountKey,
+		},
+		Run: spec.Run{
+			ControlPath: c.ControlPath,
+			PprofPath:   c.PprofPath,
+			AssumeYes:   c.AssumeYes,
+		},
+	}
 }
 
 const globalUsage = `Usage: veil --module <name[,name...]> [module-flags...]
@@ -309,6 +333,18 @@ func Parse(args []string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// splitModules splits a validated comma-separated module list, trimming
+// spaces and dropping empty entries.
+func splitModules(raw string) []string {
+	var names []string
+	for _, name := range strings.Split(raw, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 /*

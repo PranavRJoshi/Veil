@@ -61,6 +61,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	sp := cfg.ToSpec()
+
 	/*
 		CPU profiling: start recording CPU samples using Go's runtime/pprof.
 		The profile is written to the specified file path when the program
@@ -72,8 +74,8 @@ func main() {
 		This opens an interactive browser UI with flamegraphs, top functions,
 		source annotation, and call graphs.
 	*/
-	if cfg.PprofPath != "" {
-		pprofFile, err := os.Create(cfg.PprofPath)
+	if sp.Run.PprofPath != "" {
+		pprofFile, err := os.Create(sp.Run.PprofPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "pprof: %v\n", err)
 			os.Exit(1)
@@ -86,7 +88,7 @@ func main() {
 		defer func() {
 			pprof.StopCPUProfile()
 			pprofFile.Close()
-			fmt.Fprintf(os.Stderr, "CPU profile written to %s\n", cfg.PprofPath)
+			fmt.Fprintf(os.Stderr, "CPU profile written to %s\n", sp.Run.PprofPath)
 		}()
 	}
 
@@ -117,7 +119,7 @@ func main() {
 		Close() of CountSink method is called, the report is shown to the user.
 	*/
 	var baseSink output.EventSink
-	switch cfg.ModuleFlags["output"] {
+	switch sp.Output.Format {
 	case "json":
 		baseSink = output.NewJSONSink(os.Stdout)
 	default:
@@ -133,9 +135,9 @@ func main() {
 		so all modules share the same enrichment chain regardless of count.
 	*/
 	var sink output.EventSink = pausable
-	if cfg.EnrichFlags != "" {
+	if sp.Output.Enrich != "" {
 		var opts []enrich.EnricherOption
-		for _, name := range strings.Split(cfg.EnrichFlags, ",") {
+		for _, name := range strings.Split(sp.Output.Enrich, ",") {
 			switch strings.TrimSpace(name) {
 			case "time":
 				opts = append(opts, enrich.WithTimestamp())
@@ -168,21 +170,21 @@ func main() {
 		specified.
 	*/
 	var countSink *count.CountSink
-	if cfg.CountMode {
-		if cfg.CountKey != "" {
+	if sp.Output.Count {
+		if sp.Output.CountKey != "" {
 			/* First check if the user provided a valid key */
-			if err := count.ValidateKeyField(cfg.CountKey); err != nil {
+			if err := count.ValidateKeyField(sp.Output.CountKey); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
 		}
-		if cfg.EnrichFlags != "" {
+		if sp.Output.Enrich != "" {
 			fmt.Fprintln(os.Stderr, "warning: --enrich has no observable effect in conjunction with --count")
 		}
 		countSink = count.NewCountSink(os.Stderr, 10)
-		if cfg.CountKey != "" {
+		if sp.Output.CountKey != "" {
 			/* Now assign the key to the Sink */
-			countSink.WithKeyField(cfg.CountKey)
+			countSink.WithKeyField(sp.Output.CountKey)
 		}
 		sink = countSink
 	}
@@ -193,14 +195,12 @@ func main() {
 		map is passed to every factory--each module's ParseFilterConfig reads
 		only the keys it understands and ignores the rest.
 	*/
-	moduleNames := parseModuleNames(cfg.Module)
-
 	var modules []runner.Module
 
-	for _, name := range moduleNames {
-		info, _ := registry.Get(name) /* already validated by CLI */
+	for _, m := range sp.Modules {
+		info, _ := registry.Get(m.Name) /* already validated by CLI */
 
-		mod, err := info.Factory(cfg.ModuleFlags, sink)
+		mod, err := info.Factory(m.Flags, sink)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error creating module: %v\n", err)
 			os.Exit(1)
@@ -214,12 +214,12 @@ func main() {
 		before the prompt. Only uprobe is wired today; highVolumeReason is
 		the seam for a per-module policy later.
 	*/
-	for _, name := range moduleNames {
-		reason := highVolumeReason(name, cfg.ModuleFlags)
+	for _, m := range sp.Modules {
+		reason := highVolumeReason(m.Name, m.Flags)
 		if reason == "" {
 			continue
 		}
-		if err := confirmHighVolume(reason, cfg.AssumeYes); err != nil {
+		if err := confirmHighVolume(reason, sp.Run.AssumeYes); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
@@ -254,30 +254,31 @@ func main() {
 		only a fallback for a module that drops MapUpdater support.
 	*/
 	moduleLabel := strings.Join(mr.Names(), ", ")
-	updater := buildUpdater(modules, moduleNames)
+	updater := buildUpdater(modules, sp.Names())
 	handler := control.NewHandler(updater)
 
 	/*
 		Start socket server if '--control' was specified
 	*/
-	if cfg.ControlPath != "" {
-		srv := control.NewServer(cfg.ControlPath, handler)
+	if sp.Run.ControlPath != "" {
+		srv := control.NewServer(sp.Run.ControlPath, handler)
 		if err := srv.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: control socket %v\n", err)
 		} else {
 			defer srv.Stop()
-			fmt.Fprintf(os.Stderr, "control socket: %s\n", cfg.ControlPath)
+			fmt.Fprintf(os.Stderr, "control socket: %s\n", sp.Run.ControlPath)
 		}
 	}
 
-	if cfg.CountMode {
+	moduleList := strings.Join(sp.Names(), ",")
+	if sp.Output.Count {
 		fmt.Fprintf(os.Stderr,
 			"Veil [%s] running in count mode, press CTRL-C to stop and show summary\n",
-			cfg.Module)
+			moduleList)
 	} else {
 		fmt.Fprintf(os.Stderr,
 			"Veil [%s] running, press CTRL-C to pause and modify filters\n",
-			cfg.Module)
+			moduleList)
 	}
 
 	/*
@@ -360,22 +361,6 @@ func main() {
 	if countSink != nil {
 		countSink.Close()
 	}
-}
-
-/*
-	parseModuleNames splits a comma-separated module string into trimmed
-	individual names. For a single module, returns a one-element slice.
-*/
-func parseModuleNames(raw string) []string {
-	parts := strings.Split(raw, ",")
-	names := make([]string, 0, len(parts))
-	for _, p := range parts {
-		name := strings.TrimSpace(p)
-		if name != "" {
-			names = append(names, name)
-		}
-	}
-	return names
 }
 
 /*

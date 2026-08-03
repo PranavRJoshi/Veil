@@ -533,3 +533,69 @@ func TestParseMultiModuleEmptyName(t *testing.T) {
 		t.Fatal("expected error for empty module name in list")
 	}
 }
+
+func TestSplitModules(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"syscall", []string{"syscall"}},
+		{"syscall,network,files", []string{"syscall", "network", "files"}},
+		{"syscall , network", []string{"syscall", "network"}},
+		{"syscall,", []string{"syscall"}},
+		{"syscall,,network", []string{"syscall", "network"}},
+		{"", nil},
+		{" , ", nil},
+	}
+	for _, tc := range cases {
+		got := splitModules(tc.in)
+		if len(got) != len(tc.want) {
+			t.Errorf("splitModules(%q) = %v, want %v", tc.in, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("splitModules(%q) = %v, want %v", tc.in, got, tc.want)
+				break
+			}
+		}
+	}
+}
+
+func TestToSpec(t *testing.T) {
+	cfg, err := Parse([]string{
+		"--module", "syscall,network",
+		"--output", "json",
+		"--pid", "1234",
+		"--enrich", "time",
+		"--count-by", "comm",
+		"--control", "/tmp/veil.sock",
+		"--yes",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	sp := cfg.ToSpec()
+
+	if got := sp.Names(); len(got) != 2 || got[0] != "syscall" || got[1] != "network" {
+		t.Errorf("Names() = %v, want [syscall network]", got)
+	}
+	for _, m := range sp.Modules {
+		if m.Flags["pid"] != "1234" {
+			t.Errorf("module %s missing shared pid flag: %v", m.Name, m.Flags)
+		}
+	}
+	if sp.Output.Format != "json" {
+		t.Errorf("Output.Format = %q, want json", sp.Output.Format)
+	}
+	if sp.Output.Enrich != "time" {
+		t.Errorf("Output.Enrich = %q, want time", sp.Output.Enrich)
+	}
+	if !sp.Output.Count || sp.Output.CountKey != "comm" {
+		t.Errorf("Output.Count=%v CountKey=%q, want true/comm", sp.Output.Count, sp.Output.CountKey)
+	}
+	if sp.Run.ControlPath != "/tmp/veil.sock" || !sp.Run.AssumeYes {
+		t.Errorf("Run = %+v, want control socket set and AssumeYes", sp.Run)
+	}
+}
