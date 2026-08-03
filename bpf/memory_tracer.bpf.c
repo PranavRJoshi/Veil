@@ -5,14 +5,16 @@
  *
  * Attaches a kprobe and kretprobe on handle_mm_fault to capture page
  * fault events. The kprobe stashes process context (PID, TID, UID,
- * comm, faulting address) into a per-CPU array. The kretprobe reads
- * the scratch data back, classifies the fault as major or minor from
- * the return value, applies deny/allow filters, and emits to the
+ * comm, faulting address) into a hash keyed by pid_tgid. The kretprobe
+ * reads the scratch data back, classifies the fault as major or minor
+ * from the return value, applies deny/allow filters, and emits to the
  * ring buffer.
  *
- * Per-CPU correlation is safe because handle_mm_fault runs in process
- * context (the faulting task itself) and cannot be preempted to run
- * another fault handler on the same CPU.
+ * Entry-to-return correlation uses a hash keyed by pid_tgid: the entry
+ * probe stashes context, the return probe looks it up and deletes it. This
+ * survives CPU migration and concurrent faulters, which a single-slot
+ * per-CPU scratch does not -- handle_mm_fault can sleep (a major fault waits
+ * on disk), so the task may migrate or another may fault in between.
  *
  * Filter maps follow the same convention as other Veil modules:
  *   - pid_filter / pid_deny: filter by PID
@@ -51,8 +53,7 @@ struct mem_event {
 };
 
 /*
- * Scratch struct for kprobe -> kretprobe correlation.
- * Stored in a per-CPU array (one slot per CPU, index 0).
+ * Scratch struct for kprobe -> kretprobe correlation, keyed by pid_tgid.
  */
 struct fault_scratch {
     __u32 pid;
@@ -60,7 +61,6 @@ struct fault_scratch {
     __u32 uid;
     __u64 address;
     __u8  comm[TASK_COMM_LEN];
-    __u8  valid;
 };
 
 /* Ring buffer for memory events */
@@ -69,11 +69,11 @@ struct {
     __uint(max_entries, 1 << 24);  /* 16 MB */
 } mem_events SEC(".maps");
 
-/* Per-CPU scratch space for kprobe -> kretprobe correlation */
+/* Entry -> return scratch, keyed by pid_tgid */
 struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __uint(max_entries, 1);
-    __type(key, __u32);
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10240);
+    __type(key, __u64);
     __type(value, struct fault_scratch);
 } fault_scratch SEC(".maps");
 
@@ -152,7 +152,7 @@ struct {
  *                              unsigned int flags,
  *                              struct pt_regs *regs)
  *
- * Stash pid/tid/uid/comm/address into the per-CPU scratch map.
+ * Stash pid/tid/uid/comm/address into the pid_tgid-keyed scratch map.
  */
 SEC("kprobe/handle_mm_fault")
 int BPF_KPROBE(kprobe_handle_mm_fault,
@@ -160,23 +160,17 @@ int BPF_KPROBE(kprobe_handle_mm_fault,
                unsigned long address,
                unsigned int flags)
 {
-    __u32 zero = 0;
-    struct fault_scratch *s;
-
-    s = bpf_map_lookup_elem(&fault_scratch, &zero);
-    if (!s)
-        return 0;
-
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 uid_gid  = bpf_get_current_uid_gid();
 
-    s->pid     = pid_tgid >> 32;
-    s->tid     = (__u32)pid_tgid;
-    s->uid     = (__u32)uid_gid;
-    s->address = address;
-    s->valid   = 1;
-    bpf_get_current_comm(&s->comm, sizeof(s->comm));
+    struct fault_scratch s = {};
+    s.pid     = pid_tgid >> 32;
+    s.tid     = (__u32)pid_tgid;
+    s.uid     = (__u32)uid_gid;
+    s.address = address;
+    bpf_get_current_comm(&s.comm, sizeof(s.comm));
 
+    bpf_map_update_elem(&fault_scratch, &pid_tgid, &s, BPF_ANY);
     return 0;
 }
 
@@ -193,25 +187,24 @@ int BPF_KPROBE(kprobe_handle_mm_fault,
 SEC("kretprobe/handle_mm_fault")
 int BPF_KRETPROBE(kretprobe_handle_mm_fault, unsigned long ret)
 {
-    __u32 zero = 0;
-    struct fault_scratch *s;
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
 
-    s = bpf_map_lookup_elem(&fault_scratch, &zero);
-    if (!s || !s->valid)
+    struct fault_scratch *s = bpf_map_lookup_elem(&fault_scratch, &pid_tgid);
+    if (!s)
         return 0;
 
-    /* Mark invalid immediately so stale data isn't reused */
-    s->valid = 0;
+    /* Copy entry data out, then drop the scratch entry: this single delete
+     * covers every return path below. */
+    __u32 pid = s->pid;
+    __u32 tid = s->tid;
+    __u32 uid = s->uid;
+    __u64 address = s->address;
+    __u8  comm[TASK_COMM_LEN];
+    __builtin_memcpy(comm, s->comm, TASK_COMM_LEN);
+    bpf_map_delete_elem(&fault_scratch, &pid_tgid);
 
     /* Classify fault type from return value */
-    __u32 fault_type;
-    if (ret & VM_FAULT_MAJOR)
-        fault_type = EVT_MAJOR_FAULT;
-    else
-        fault_type = EVT_MINOR_FAULT;
-
-    __u32 pid = s->pid;
-    __u32 uid = s->uid;
+    __u32 fault_type = (ret & VM_FAULT_MAJOR) ? EVT_MAJOR_FAULT : EVT_MINOR_FAULT;
 
     /* Filter logic: deny first, then allow */
     __u32 cfg_key = 0;
@@ -255,16 +248,16 @@ int BPF_KRETPROBE(kretprobe_handle_mm_fault, unsigned long ret)
         return 0;
 
     e->pid       = pid;
-    e->tid       = s->tid;
+    e->tid       = tid;
     e->uid       = uid;
     e->evt_type  = (__u8)fault_type;
     e->pad[0]    = 0;
     e->pad[1]    = 0;
     e->pad[2]    = 0;
     e->timestamp = bpf_ktime_get_ns();
-    e->address   = s->address;
+    e->address   = address;
 
-    __builtin_memcpy(e->comm, s->comm, TASK_COMM_LEN);
+    __builtin_memcpy(e->comm, comm, TASK_COMM_LEN);
 
     bpf_ringbuf_submit(e, 0);
     return 0;

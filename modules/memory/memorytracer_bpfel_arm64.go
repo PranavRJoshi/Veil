@@ -19,8 +19,6 @@ type MemoryTracerFaultScratch struct {
 	_       [4]byte
 	Address uint64
 	Comm    [16]uint8
-	Valid   uint8
-	_       [7]byte
 }
 
 // LoadMemoryTracer returns the embedded CollectionSpec for MemoryTracer.

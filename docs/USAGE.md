@@ -213,9 +213,9 @@ sudo ./bin/veil --module scheduler -p 1234 --enrich time
 
 ### memory module
 
-Traces page faults via a `kprobe`/`kretprobe` pair on `handle_mm_fault`. The kprobe fires at function entry and stashes process context (PID, TID, UID, comm, faulting address) into a per-CPU array. The kretprobe fires on return, classifies the fault from the return value, applies filters, and emits to the ring buffer.
+Traces page faults via a `kprobe`/`kretprobe` pair on `handle_mm_fault`. The kprobe fires at function entry and stashes process context (PID, TID, UID, comm, faulting address) into a hash keyed by `pid_tgid`. The kretprobe fires on return, looks the entry back up, classifies the fault from the return value, applies filters, emits to the ring buffer, and deletes the entry.
 
-Per-CPU correlation is safe because `handle_mm_fault` runs in process context — the faulting task itself — with `mmap_lock` held. A task cannot be preempted to handle another fault on the same CPU.
+Keying the correlation by `pid_tgid` (rather than a per-CPU slot) keeps entry and return matched even when the task migrates between CPUs or another task faults in between -- both of which can happen because a major fault sleeps waiting on disk.
 
 Fault classification uses the `VM_FAULT_MAJOR` bit (0x04) in the return value. If set, the fault required disk I/O (major). Otherwise it was resolved from page cache or anonymous memory (minor).
 
