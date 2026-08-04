@@ -32,6 +32,14 @@ type Module interface {
 	Runner
 }
 
+// ConfigValidator is an optional interface for modules whose flags carry
+// values a Load would reject but that resolve without a kernel -- syscall
+// names against the host table, say. `veil config validate` calls it for a
+// dry run; a module without value-level checks simply omits it.
+type ConfigValidator interface {
+	ValidateConfig() error
+}
+
 // MultiRunner manages the lifecycle of multiple modules running concurrently.
 // It handles:
 //   - Sequential loading (fail-fast: if any module fails to load, previously

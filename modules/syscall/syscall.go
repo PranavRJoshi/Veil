@@ -255,6 +255,18 @@ func syscallCandidates() []string {
 	return names
 }
 
+var _ runner.ConfigValidator = (*TracerModule)(nil)
+
+// ValidateConfig resolves the filter's allow and deny syscall names against
+// this host's table without loading BPF. Implements runner.ConfigValidator.
+func (t *TracerModule) ValidateConfig() error {
+	if _, err := resolveSyscalls(t.filter.Syscalls); err != nil {
+		return err
+	}
+	_, err := resolveSyscalls(t.filter.DenySyscalls)
+	return err
+}
+
 /*
 	Load() method, which is required for our Program interface.
 	Note that each invocation of this function spawns a goroutine which is used

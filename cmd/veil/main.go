@@ -36,6 +36,12 @@ import (
 )
 
 func main() {
+	// The "config" verb is a subcommand, not a flag; handle it before the
+	// flag parser and before any kernel work (validation is kernel-free).
+	if args := os.Args[1:]; len(args) > 0 && args[0] == "config" {
+		os.Exit(runConfigCmd(os.Args[0], args[1:]))
+	}
+
 	cfg, err := cli.Parse(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
