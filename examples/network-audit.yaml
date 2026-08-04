@@ -1,0 +1,12 @@
+# One flat JSON record per TCP connection, ready for jq or a log shipper.
+# fields keeps only the columns that matter.
+#
+#   sudo ./bin/veil --config examples/network-audit.yaml | jq .
+
+modules:
+  - name: network
+
+output:
+  format: json
+  enrich: [time]
+  fields: [time, comm, pid, saddr, sport, daddr, dport]

@@ -1,0 +1,12 @@
+# Rank the syscalls a service spends itself on. count_by suppresses the live
+# stream and prints a summary on Ctrl-C. Scoped by process name, not PID.
+#
+#   sudo ./bin/veil --config examples/syscall-profile.yaml
+
+modules:
+  - name: syscall
+    flags:
+      name: nginx
+
+output:
+  count_by: syscall

@@ -1,0 +1,12 @@
+# Rank tasks by how often they are scheduled on cores 0 and 1 -- who owns
+# the CPU.
+#
+#   sudo ./bin/veil --config examples/scheduler-oncpu.yaml
+
+modules:
+  - name: scheduler
+    flags:
+      cpu: [0, 1]
+
+output:
+  count_by: next_comm

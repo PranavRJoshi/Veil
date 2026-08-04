@@ -1,0 +1,12 @@
+# Time a hot userspace function in one process. latency adds a uretprobe for
+# per-call duration; scope to a PID since a uprobe fires for every caller.
+# Replace the path:symbol and PID.
+#
+#   sudo ./bin/veil --config examples/uprobe-latency.yaml
+
+modules:
+  - name: uprobe
+    flags:
+      uprobe: /usr/lib/x86_64-linux-gnu/libc.so.6:malloc
+      latency: true
+      pid: [1234]

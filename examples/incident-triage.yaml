@@ -1,0 +1,20 @@
+# Watch one suspect PID across three subsystems at once. Each module carries
+# its own filter -- the CLI's single shared --pid cannot do this. Replace 1234.
+#
+#   sudo ./bin/veil --config examples/incident-triage.yaml
+
+modules:
+  - name: syscall
+    flags:
+      pid: [1234]
+      syscall: ["!futex", "!epoll_pwait"]   # drop the noisy idle syscalls
+  - name: files
+    flags:
+      pid: [1234]
+      op: [open, write]
+  - name: network
+    flags:
+      pid: [1234]
+
+output:
+  enrich: [time, proc]

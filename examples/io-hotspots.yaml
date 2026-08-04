@@ -1,0 +1,12 @@
+# Rank files by read/write volume. open is excluded so the count reflects
+# data movement, not handles being opened.
+#
+#   sudo ./bin/veil --config examples/io-hotspots.yaml
+
+modules:
+  - name: files
+    flags:
+      op: [read, write]
+
+output:
+  count_by: filename
