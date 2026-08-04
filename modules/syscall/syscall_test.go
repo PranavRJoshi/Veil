@@ -1,6 +1,7 @@
 package syscall
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/PranavRJoshi/Veil/internal/events"
@@ -225,5 +226,23 @@ func TestToFields_AllFieldsPresent(t *testing.T) {
 	}
 	if f["kind"] != "syscall" {
 		t.Errorf("kind = %v, want 'syscall'", f["kind"])
+	}
+}
+
+// A near-miss name is rejected with a "did you mean" hint. "opena" is one
+// deletion from openat, which is present on every supported architecture.
+func TestResolveSyscalls_UnknownSuggests(t *testing.T) {
+	_, err := resolveSyscalls([]string{"opena"})
+	if err == nil {
+		t.Fatal("expected error for unknown syscall name")
+	}
+	if !strings.Contains(err.Error(), "openat") {
+		t.Errorf("error lacks suggestion: %v", err)
+	}
+}
+
+func TestResolveSyscalls_Valid(t *testing.T) {
+	if _, err := resolveSyscalls([]string{"openat"}); err != nil {
+		t.Fatalf("openat should resolve: %v", err)
 	}
 }

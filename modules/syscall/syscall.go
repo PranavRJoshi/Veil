@@ -39,6 +39,7 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
+	"github.com/PranavRJoshi/Veil/internal/suggest"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 )
@@ -234,11 +235,24 @@ func resolveSyscalls(names []string) ([]uint64, error) {
 	for _, name := range names {
 		nr, ok := SyscallNumber(name)
 		if !ok {
+			if hints := suggest.Closest(name, syscallCandidates(), 5); len(hints) > 0 {
+				return nil, fmt.Errorf("syscall: unknown syscall name %q\n\nDid you mean:\n%s", name, strings.Join(hints, "\n"))
+			}
 			return nil, fmt.Errorf("syscall: unknown syscall name %q", name)
 		}
 		out = append(out, nr)
 	}
 	return out, nil
+}
+
+// syscallCandidates lists every name in this architecture's table for the
+// "did you mean" hint on an unknown name.
+func syscallCandidates() []string {
+	names := make([]string, 0, len(syscallNumbers))
+	for name := range syscallNumbers {
+		names = append(names, name)
+	}
+	return names
 }
 
 /*
