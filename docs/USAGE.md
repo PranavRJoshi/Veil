@@ -20,6 +20,7 @@ Complete CLI reference for all modules, flags, and features.
 - [Multi-Module Mode](#multi-module-mode)
 - [Event Enrichment](#event-enrichment)
 - [Output Formats](#output-formats)
+- [Configuration File](#configuration-file)
 - [Count Mode](#count-mode)
 - [Runtime Filter Control](#runtime-filter-control)
   - [Interactive Mode](#interactive-mode)
@@ -34,7 +35,8 @@ Complete CLI reference for all modules, flags, and features.
 
 | Flag | Description |
 |---|---|
-| `--module <name[,name...]>` | Module(s) to run (required). Comma-separated for multi-module. |
+| `--module <name[,name...]>` | Module(s) to run (required unless `--config`). Comma-separated for multi-module. |
+| `--config <path>` | Load the trace spec from a YAML file (governs modules and output). See [Configuration File](#configuration-file). |
 | `--output <format>` | Output format: `text` (default) or `json`. |
 | `--enrich <opts>` | Enrichment: `time`, `proc`, `user`, `all` (comma-separated). |
 | `--fields <a,b,c>` | Project output to these fields (comma-separated); text becomes `key=value`, JSON keeps only these keys. |
@@ -471,6 +473,48 @@ sudo ./bin/veil --module syscall --fields comm,pid,syscall --output json
 ```
 
 Field names are the output fields listed for each module above. Unknown fields are not an error: they render empty (text) or are omitted (JSON). Like `--enrich`, `--fields` has no effect under `--count`.
+
+---
+
+## Configuration File
+
+`--config <path>` loads the whole trace from a YAML file instead of flags. The
+file is a second way to write the same thing the CLI produces, with one thing
+the CLI cannot express: **each module gets its own filters** (on the command
+line, filter flags are shared across every module in a multi-module run).
+
+```yaml
+modules:
+  - name: syscall
+    flags:
+      pid: [1234, 5678]
+      syscall: [openat, "!ioctl"]   # '!' is a deny value, as on the CLI
+  - name: network
+    flags:
+      port: [443]
+
+output:
+  format: json
+  enrich: [time, proc]
+  fields: [comm, pid, syscall]
+  count_by: syscall               # implies count
+
+run:
+  control: /tmp/veil.sock
+  yes: true
+```
+
+Flag values may be a single scalar, a list (joined with commas), or a boolean
+for toggle flags such as `latency`. Module and flag names are validated against
+the registry, and unknown keys are rejected, so a typo fails loudly.
+
+```bash
+sudo ./bin/veil --config trace.yaml
+```
+
+With `--config`, the file governs the modules and output; trace-defining flags
+passed alongside it are ignored with a warning. The operational flags
+`--control`, `--pprof`, and `--yes` still apply and override the file.
 
 ---
 

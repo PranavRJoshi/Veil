@@ -17,6 +17,7 @@ import (
 type Config struct {
 	Module      string            /* comma-separated module names */
 	ModuleFlags map[string]string /* shared module key=value flags */
+	ConfigPath  string            /* --config <path>: load spec from YAML */
 	ControlPath string            /* --control <path>: Unix socket */
 	EnrichFlags string            /* --enrich <opts>: time,proc,user,all */
 	Fields      string            /* --fields <a,b,c>: project output to these fields */
@@ -52,10 +53,40 @@ func (c Config) ToSpec() spec.Spec {
 	}
 }
 
+// TraceFlags reports which trace-defining flags the user set: the modules,
+// their filters, and output shaping. It exists so main can warn that these
+// are ignored when --config governs the run. Operational flags (control,
+// pprof, yes) are excluded; those may layer onto a config.
+func (c Config) TraceFlags() []string {
+	var names []string
+	if c.Module != "" {
+		names = append(names, "--module")
+	}
+	for name := range c.ModuleFlags {
+		if name == "output" {
+			names = append(names, "--output")
+		} else {
+			names = append(names, "--"+name)
+		}
+	}
+	if c.EnrichFlags != "" {
+		names = append(names, "--enrich")
+	}
+	if c.Fields != "" {
+		names = append(names, "--fields")
+	}
+	if c.CountMode {
+		names = append(names, "--count")
+	}
+	sort.Strings(names)
+	return names
+}
+
 const globalUsage = `Usage: veil --module <name[,name...]> [module-flags...]
 
 Global flags:
-  --module <name>    Select the module to run (required)
+  --module <name>    Select the module to run (required unless --config)
+  --config <path>    Load the trace spec from a YAML file (governs modules/output)
   --list-modules     List available modules and exit
   --output <format>  Output format: text (default), json
   --enrich <opts>    Enable enrichment: time, proc, user, all (comma-separated)
@@ -245,6 +276,13 @@ func Parse(args []string) (Config, error) {
 			i++
 			cfg.ModuleFlags["output"] = args[i]
 
+		case arg == "--config":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--config requires a file path")
+			}
+			i++
+			cfg.ConfigPath = args[i]
+
 		case arg == "--control":
 			if i+1 >= len(args) {
 				return cfg, fmt.Errorf("--control requires a socket path")
@@ -291,7 +329,7 @@ func Parse(args []string) (Config, error) {
 			/*
 				Module flags are declared per module in the registry. Look
 				the flag up by long or short name; negatable flags split
-				their value into allow and <name>_deny via splitAllowDeny.
+				their value into allow and <name>_deny via SplitAllowDeny.
 			*/
 			def, ok := flags[arg]
 			switch {
@@ -307,7 +345,7 @@ func Parse(args []string) (Config, error) {
 				}
 				i++
 				if def.Negatable {
-					allow, deny := splitAllowDeny(args[i])
+					allow, deny := SplitAllowDeny(args[i])
 					if allow != "" {
 						cfg.ModuleFlags[def.Name] = allow
 					}
@@ -321,6 +359,14 @@ func Parse(args []string) (Config, error) {
 		}
 
 		i++
+	}
+
+	/*
+		With --config the file governs modules and output, so the trace-
+		defining flags are neither required nor validated here.
+	*/
+	if cfg.ConfigPath != "" {
+		return cfg, nil
 	}
 
 	/* user must supply one module to work with */
@@ -372,7 +418,7 @@ func Usage() {
 }
 
 /*
-	splitAllowDeny separates a comma-separated value string into allow and deny
+	SplitAllowDeny separates a comma-separated value string into allow and deny
 	components. Values prefixed with '!' are deny values.
 
 	NOTE: In interactive mode, shell programs interpret the '!' character as
@@ -393,7 +439,7 @@ func Usage() {
 
 	The '!' is stripped from deny values in the returned string.
 */
-func splitAllowDeny(raw string) (allow, deny string) {
+func SplitAllowDeny(raw string) (allow, deny string) {
 	var allows, denies []string
 
 	for _, s := range strings.Split(raw, ",") {

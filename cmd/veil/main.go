@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/PranavRJoshi/Veil/internal/cli"
+	"github.com/PranavRJoshi/Veil/internal/config"
 	"github.com/PranavRJoshi/Veil/internal/control"
 	"github.com/PranavRJoshi/Veil/internal/count"
 	"github.com/PranavRJoshi/Veil/internal/enrich"
@@ -19,6 +20,7 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/output"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
+	"github.com/PranavRJoshi/Veil/internal/spec"
 
 	/*
 		Blank imports trigger init() in each module package, which
@@ -61,7 +63,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	sp := cfg.ToSpec()
+	sp, err := loadSpec(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
 	/*
 		CPU profiling: start recording CPU samples using Go's runtime/pprof.
@@ -387,6 +393,38 @@ func moduleFormatters() map[string]output.TextFormatFunc {
 		}
 	}
 	return formatters
+}
+
+/*
+	loadSpec resolves the run's spec. With --config the file governs modules
+	and output; any trace-defining CLI flags are ignored with a warning, while
+	operational flags (control, pprof, yes) layer on top and win when set.
+	Without --config the spec comes entirely from the parsed flags.
+*/
+func loadSpec(cfg cli.Config) (spec.Spec, error) {
+	if cfg.ConfigPath == "" {
+		return cfg.ToSpec(), nil
+	}
+
+	sp, err := config.Load(cfg.ConfigPath)
+	if err != nil {
+		return spec.Spec{}, err
+	}
+
+	if ignored := cfg.TraceFlags(); len(ignored) > 0 {
+		fmt.Fprintf(os.Stderr, "warning: --config governs the run; ignoring %s\n", strings.Join(ignored, ", "))
+	}
+
+	if cfg.ControlPath != "" {
+		sp.Run.ControlPath = cfg.ControlPath
+	}
+	if cfg.PprofPath != "" {
+		sp.Run.PprofPath = cfg.PprofPath
+	}
+	if cfg.AssumeYes {
+		sp.Run.AssumeYes = true
+	}
+	return sp, nil
 }
 
 /*

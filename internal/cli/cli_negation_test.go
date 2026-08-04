@@ -5,11 +5,11 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// splitAllowDeny
+// SplitAllowDeny
 // ---------------------------------------------------------------------------
 
 func TestSplitAllowDeny_AllowOnly(t *testing.T) {
-	allow, deny := splitAllowDeny("1234,5678")
+	allow, deny := SplitAllowDeny("1234,5678")
 	if allow != "1234,5678" {
 		t.Errorf("allow = %q, want %q", allow, "1234,5678")
 	}
@@ -19,7 +19,7 @@ func TestSplitAllowDeny_AllowOnly(t *testing.T) {
 }
 
 func TestSplitAllowDeny_DenyOnly(t *testing.T) {
-	allow, deny := splitAllowDeny("!100,!200")
+	allow, deny := SplitAllowDeny("!100,!200")
 	if allow != "" {
 		t.Errorf("allow = %q, want empty", allow)
 	}
@@ -29,7 +29,7 @@ func TestSplitAllowDeny_DenyOnly(t *testing.T) {
 }
 
 func TestSplitAllowDeny_Mixed(t *testing.T) {
-	allow, deny := splitAllowDeny("1234,!5678")
+	allow, deny := SplitAllowDeny("1234,!5678")
 	if allow != "1234" {
 		t.Errorf("allow = %q, want %q", allow, "1234")
 	}
@@ -39,7 +39,7 @@ func TestSplitAllowDeny_Mixed(t *testing.T) {
 }
 
 func TestSplitAllowDeny_MultiMixed(t *testing.T) {
-	allow, deny := splitAllowDeny("100,!200,300,!400")
+	allow, deny := SplitAllowDeny("100,!200,300,!400")
 	if allow != "100,300" {
 		t.Errorf("allow = %q, want %q", allow, "100,300")
 	}
@@ -49,7 +49,7 @@ func TestSplitAllowDeny_MultiMixed(t *testing.T) {
 }
 
 func TestSplitAllowDeny_SingleDeny(t *testing.T) {
-	allow, deny := splitAllowDeny("!42")
+	allow, deny := SplitAllowDeny("!42")
 	if allow != "" {
 		t.Errorf("allow = %q, want empty", allow)
 	}
@@ -59,7 +59,7 @@ func TestSplitAllowDeny_SingleDeny(t *testing.T) {
 }
 
 func TestSplitAllowDeny_WithSpaces(t *testing.T) {
-	allow, deny := splitAllowDeny(" 100 , !200 ")
+	allow, deny := SplitAllowDeny(" 100 , !200 ")
 	if allow != "100" {
 		t.Errorf("allow = %q, want %q", allow, "100")
 	}
@@ -69,7 +69,7 @@ func TestSplitAllowDeny_WithSpaces(t *testing.T) {
 }
 
 func TestSplitAllowDeny_EmptyString(t *testing.T) {
-	allow, deny := splitAllowDeny("")
+	allow, deny := SplitAllowDeny("")
 	if allow != "" {
 		t.Errorf("allow = %q, want empty", allow)
 	}
@@ -79,7 +79,7 @@ func TestSplitAllowDeny_EmptyString(t *testing.T) {
 }
 
 func TestSplitAllowDeny_BangAlone(t *testing.T) {
-	allow, deny := splitAllowDeny("!")
+	allow, deny := SplitAllowDeny("!")
 	if allow != "" {
 		t.Errorf("allow = %q, want empty", allow)
 	}
@@ -89,7 +89,7 @@ func TestSplitAllowDeny_BangAlone(t *testing.T) {
 }
 
 func TestSplitAllowDeny_TrailingComma(t *testing.T) {
-	allow, deny := splitAllowDeny("100,")
+	allow, deny := SplitAllowDeny("100,")
 	if allow != "100" {
 		t.Errorf("allow = %q, want %q", allow, "100")
 	}

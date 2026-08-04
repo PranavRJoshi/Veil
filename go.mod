@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/chzyer/readline v1.5.1
 	github.com/cilium/ebpf v0.11.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
