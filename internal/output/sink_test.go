@@ -14,6 +14,33 @@ func sampleFields() map[string]interface{} {
 	}
 }
 
+func TestJSONSinkWithFields(t *testing.T) {
+	var buf bytes.Buffer
+	sink := NewJSONSink(&buf).WithFields([]string{"comm", "pid", "module"})
+
+	err := sink.Emit("syscall", map[string]interface{}{
+		"comm": "bash", "pid": uint32(1234), "uid": uint32(0), "syscall": "openat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(out) != 3 {
+		t.Errorf("projected output has %d keys, want 3: %v", len(out), out)
+	}
+	if out["comm"] != "bash" || out["module"] != "syscall" {
+		t.Errorf("projected output = %v", out)
+	}
+	if _, ok := out["uid"]; ok {
+		t.Error("uid was not requested but appears in output")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // TextSink
 // ---------------------------------------------------------------------------

@@ -56,9 +56,10 @@ func genericTextFormat(module string, fields map[string]interface{}) string {
 
 // JSONSink writes one JSON object per line (NDJSON).
 type JSONSink struct {
-	mu  sync.Mutex
-	enc *json.Encoder
-	w   io.Writer
+	mu     sync.Mutex
+	enc    *json.Encoder
+	w      io.Writer
+	fields []string // allowlist; nil means all fields plus "module"
 }
 
 // NewJSONSink creates a sink that writes JSON-lines to w.
@@ -68,12 +69,31 @@ func NewJSONSink(w io.Writer) *JSONSink {
 	return &JSONSink{enc: enc, w: w}
 }
 
+// WithFields restricts output to the given field keys. "module" is included
+// only if it is among them. An empty list leaves the sink unrestricted.
+func (s *JSONSink) WithFields(fields []string) *JSONSink {
+	s.fields = fields
+	return s
+}
+
 func (s *JSONSink) Emit(module string, fields map[string]interface{}) error {
-	out := make(map[string]interface{}, len(fields)+1)
-	for k, v := range fields {
-		out[k] = v
+	var out map[string]interface{}
+	if len(s.fields) == 0 {
+		out = make(map[string]interface{}, len(fields)+1)
+		for k, v := range fields {
+			out[k] = v
+		}
+		out["module"] = module
+	} else {
+		out = make(map[string]interface{}, len(s.fields))
+		for _, k := range s.fields {
+			if k == "module" {
+				out[k] = module
+			} else if v, ok := fields[k]; ok {
+				out[k] = v
+			}
+		}
 	}
-	out["module"] = module
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

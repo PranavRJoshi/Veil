@@ -37,6 +37,7 @@ Complete CLI reference for all modules, flags, and features.
 | `--module <name[,name...]>` | Module(s) to run (required). Comma-separated for multi-module. |
 | `--output <format>` | Output format: `text` (default) or `json`. |
 | `--enrich <opts>` | Enrichment: `time`, `proc`, `user`, `all` (comma-separated). |
+| `--fields <a,b,c>` | Project output to these fields (comma-separated); text becomes `key=value`, JSON keeps only these keys. |
 | `--count` | Summary mode: suppress live output, show top-N on exit. |
 | `--count-by <field>` | Override aggregation key (implies `--count`). |
 | `--control <path>` | Start a Unix socket control server at the given path. |
@@ -453,6 +454,23 @@ sudo ./bin/veil --module syscall --output json >> /var/log/veil.jsonl
 ```
 
 JSON output is suitable for piping to `jq`, ingesting into monitoring systems, or structured log aggregation.
+
+### Field Projection (`--fields`)
+
+`--fields comm,pid,syscall` restricts output to the named fields, in the given order:
+
+- **Text**: the module's fixed line is replaced by a `key=value` line of the selected fields. A field the event does not carry renders as `key=`.
+- **JSON**: only the selected keys are emitted. `module` is included only if you list it.
+
+```bash
+sudo ./bin/veil --module syscall --fields comm,pid,syscall
+# comm=bash pid=1234 syscall=openat
+
+sudo ./bin/veil --module syscall --fields comm,pid,syscall --output json
+# {"comm":"bash","pid":1234,"syscall":"openat"}
+```
+
+Field names are the output fields listed for each module above. Unknown fields are not an error: they render empty (text) or are omitted (JSON). Like `--enrich`, `--fields` has no effect under `--count`.
 
 ---
 

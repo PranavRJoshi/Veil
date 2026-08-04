@@ -534,7 +534,7 @@ func TestParseMultiModuleEmptyName(t *testing.T) {
 	}
 }
 
-func TestSplitModules(t *testing.T) {
+func TestSplitCSV(t *testing.T) {
 	cases := []struct {
 		in   string
 		want []string
@@ -548,14 +548,14 @@ func TestSplitModules(t *testing.T) {
 		{" , ", nil},
 	}
 	for _, tc := range cases {
-		got := splitModules(tc.in)
+		got := splitCSV(tc.in)
 		if len(got) != len(tc.want) {
-			t.Errorf("splitModules(%q) = %v, want %v", tc.in, got, tc.want)
+			t.Errorf("splitCSV(%q) = %v, want %v", tc.in, got, tc.want)
 			continue
 		}
 		for i := range got {
 			if got[i] != tc.want[i] {
-				t.Errorf("splitModules(%q) = %v, want %v", tc.in, got, tc.want)
+				t.Errorf("splitCSV(%q) = %v, want %v", tc.in, got, tc.want)
 				break
 			}
 		}
@@ -568,6 +568,7 @@ func TestToSpec(t *testing.T) {
 		"--output", "json",
 		"--pid", "1234",
 		"--enrich", "time",
+		"--fields", "comm,pid",
 		"--count-by", "comm",
 		"--control", "/tmp/veil.sock",
 		"--yes",
@@ -580,6 +581,9 @@ func TestToSpec(t *testing.T) {
 
 	if got := sp.Names(); len(got) != 2 || got[0] != "syscall" || got[1] != "network" {
 		t.Errorf("Names() = %v, want [syscall network]", got)
+	}
+	if got := sp.Output.Fields; len(got) != 2 || got[0] != "comm" || got[1] != "pid" {
+		t.Errorf("Output.Fields = %v, want [comm pid]", got)
 	}
 	for _, m := range sp.Modules {
 		if m.Flags["pid"] != "1234" {

@@ -11,6 +11,21 @@ import (
 // Enrichment helpers
 // ---------------------------------------------------------------------------
 
+func TestFieldsFormat(t *testing.T) {
+	f := map[string]interface{}{"comm": "bash", "pid": uint32(1234), "syscall": "openat"}
+
+	format := FieldsFormat([]string{"comm", "pid", "syscall"})
+	if got := format("syscall", f); got != "comm=bash pid=1234 syscall=openat" {
+		t.Errorf("FieldsFormat = %q", got)
+	}
+
+	/* order follows the request; an absent field renders empty */
+	reordered := FieldsFormat([]string{"syscall", "missing"})
+	if got := reordered("syscall", f); got != "syscall=openat missing=" {
+		t.Errorf("FieldsFormat = %q, want reordered with empty absent field", got)
+	}
+}
+
 func TestTimePrefix(t *testing.T) {
 	if got := TimePrefix(map[string]interface{}{"time": "14:32:05.123"}); got != "[14:32:05.123] " {
 		t.Errorf("TimePrefix = %q, want %q", got, "[14:32:05.123] ")

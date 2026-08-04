@@ -19,6 +19,7 @@ type Config struct {
 	ModuleFlags map[string]string /* shared module key=value flags */
 	ControlPath string            /* --control <path>: Unix socket */
 	EnrichFlags string            /* --enrich <opts>: time,proc,user,all */
+	Fields      string            /* --fields <a,b,c>: project output to these fields */
 	CountMode   bool              /* --count: enable count/summary mode */
 	CountKey    string            /* --count-by <field>: override aggregation key */
 	PprofPath   string            /* --pprof <path>: write CPU profile on exit */
@@ -31,7 +32,7 @@ type Config struct {
 // Flags map.
 func (c Config) ToSpec() spec.Spec {
 	var mods []spec.Module
-	for _, name := range splitModules(c.Module) {
+	for _, name := range splitCSV(c.Module) {
 		mods = append(mods, spec.Module{Name: name, Flags: c.ModuleFlags})
 	}
 	return spec.Spec{
@@ -39,6 +40,7 @@ func (c Config) ToSpec() spec.Spec {
 		Output: spec.Output{
 			Format:   c.ModuleFlags["output"],
 			Enrich:   c.EnrichFlags,
+			Fields:   splitCSV(c.Fields),
 			Count:    c.CountMode,
 			CountKey: c.CountKey,
 		},
@@ -57,6 +59,7 @@ Global flags:
   --list-modules     List available modules and exit
   --output <format>  Output format: text (default), json
   --enrich <opts>    Enable enrichment: time, proc, user, all (comma-separated)
+  --fields <a,b,c>   Project output to these fields (comma-separated)
   --count            Enable count/summary mode: suppress live output, show top-N on exit
   --count-by <field> Override aggregation key (default: per-module, e.g., syscall, file, dport)
   --control <path>   Start a Unix socket control server at <path>
@@ -256,6 +259,13 @@ func Parse(args []string) (Config, error) {
 			i++
 			cfg.EnrichFlags = args[i]
 
+		case arg == "--fields":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--fields requires a value (comma-separated field names)")
+			}
+			i++
+			cfg.Fields = args[i]
+
 		case arg == "--yes":
 			cfg.AssumeYes = true
 
@@ -335,16 +345,16 @@ func Parse(args []string) (Config, error) {
 	return cfg, nil
 }
 
-// splitModules splits a validated comma-separated module list, trimming
-// spaces and dropping empty entries.
-func splitModules(raw string) []string {
-	var names []string
-	for _, name := range strings.Split(raw, ",") {
-		if name = strings.TrimSpace(name); name != "" {
-			names = append(names, name)
+// splitCSV splits a comma-separated value, trimming spaces and dropping
+// empty entries.
+func splitCSV(raw string) []string {
+	var out []string
+	for _, v := range strings.Split(raw, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
 		}
 	}
-	return names
+	return out
 }
 
 /*

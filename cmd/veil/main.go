@@ -121,9 +121,17 @@ func main() {
 	var baseSink output.EventSink
 	switch sp.Output.Format {
 	case "json":
-		baseSink = output.NewJSONSink(os.Stdout)
+		js := output.NewJSONSink(os.Stdout)
+		if len(sp.Output.Fields) > 0 {
+			js.WithFields(sp.Output.Fields)
+		}
+		baseSink = js
 	default:
-		baseSink = output.NewTextSink(os.Stdout, output.DispatchTextFormat(moduleFormatters()))
+		format := output.DispatchTextFormat(moduleFormatters())
+		if len(sp.Output.Fields) > 0 {
+			format = output.FieldsFormat(sp.Output.Fields)
+		}
+		baseSink = output.NewTextSink(os.Stdout, format)
 	}
 	pausable := output.NewPausableSink(baseSink)
 	defer baseSink.Close()
@@ -180,6 +188,9 @@ func main() {
 		}
 		if sp.Output.Enrich != "" {
 			fmt.Fprintln(os.Stderr, "warning: --enrich has no observable effect in conjunction with --count")
+		}
+		if len(sp.Output.Fields) > 0 {
+			fmt.Fprintln(os.Stderr, "warning: --fields has no observable effect in conjunction with --count")
 		}
 		countSink = count.NewCountSink(os.Stderr, 10)
 		if sp.Output.CountKey != "" {

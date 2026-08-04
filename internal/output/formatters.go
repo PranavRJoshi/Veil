@@ -1,6 +1,9 @@
 package output
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 /*
 	TimePrefix and EnrichSuffix format the enrichment fields shared by every
@@ -41,5 +44,25 @@ func DispatchTextFormat(formatters map[string]TextFormatFunc) TextFormatFunc {
 			return fn(module, f)
 		}
 		return genericTextFormat(module, f)
+	}
+}
+
+/*
+	FieldsFormat renders a text line of the given fields as key=value in the
+	requested order. A field the event does not carry renders as key=. Used
+	when the user projects output with --fields, replacing the per-module
+	formatter.
+*/
+func FieldsFormat(fields []string) TextFormatFunc {
+	return func(module string, f map[string]interface{}) string {
+		parts := make([]string, len(fields))
+		for i, key := range fields {
+			if v, ok := f[key]; ok {
+				parts[i] = fmt.Sprintf("%s=%v", key, v)
+			} else {
+				parts[i] = key + "="
+			}
+		}
+		return strings.Join(parts, " ")
 	}
 }

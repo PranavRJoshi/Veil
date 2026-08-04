@@ -15,8 +15,9 @@ type Module struct {
 }
 
 type Output struct {
-	Format   string // "text" (default) or "json"
-	Enrich   string // comma-separated: time, proc, user, all
+	Format   string   // "text" (default) or "json"
+	Enrich   string   // comma-separated: time, proc, user, all
+	Fields   []string // project output to these fields; empty means all
 	Count    bool
 	CountKey string // implies Count
 }
