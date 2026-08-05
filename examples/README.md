@@ -7,6 +7,12 @@ application (modify flags such as PID accordingly). Load one with `--config`:
 sudo ./bin/veil --config examples/network-audit.yaml
 ```
 
+Check a file (or all of them) without root or the kernel first:
+
+```bash
+./bin/veil config validate examples/*.yaml
+```
+
 A config file governs the modules and their output; the file's advantage over
 the command line is that each module gets its own filters, which a single
 shared set of CLI flags cannot express. See the [Configuration File](../docs/USAGE.md#configuration-file)
@@ -19,5 +25,5 @@ section for the full schema.
 | [network-audit.yaml](network-audit.yaml) | A compact JSON log of TCP connections, ready for `jq` or a shipper. |
 | [io-hotspots.yaml](io-hotspots.yaml) | Which files see the most read/write activity? |
 | [scheduler-oncpu.yaml](scheduler-oncpu.yaml) | Which tasks are scheduled most often on a busy core? |
-A
 | [uprobe-latency.yaml](uprobe-latency.yaml) | How long does a hot userspace function take in a running process? |
+| [web-service.yaml](web-service.yaml) | Several profiles for one service (`overview`, `connections`, `triage`), selected with `--profile`. |

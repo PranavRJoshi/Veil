@@ -1,0 +1,44 @@
+# Several ways to observe one web service in a single file, each a named
+# profile selected with --profile.
+#
+#   sudo ./bin/veil --config examples/web-service.yaml                 # runs 'overview'
+#   sudo ./bin/veil --config examples/web-service.yaml --profile triage
+#   ./bin/veil config validate examples/web-service.yaml              # checks all three
+
+default: overview
+
+profiles:
+  # What is the service spending syscalls on?
+  overview:
+    modules:
+      - name: syscall
+        flags:
+          name: nginx
+    output:
+      count_by: syscall
+
+  # A structured connection log, ready for a shipper.
+  connections:
+    modules:
+      - name: network
+    output:
+      format: json
+      enrich: [time]
+      fields: [time, comm, pid, saddr, sport, daddr, dport]
+
+  # Full triage of one suspect PID across subsystems. Replace 1234.
+  triage:
+    modules:
+      - name: syscall
+        flags:
+          pid: [1234]
+          syscall: ["!futex", "!epoll_pwait"]
+      - name: files
+        flags:
+          pid: [1234]
+          op: [open, write]
+      - name: network
+        flags:
+          pid: [1234]
+    output:
+      enrich: [time, proc]

@@ -21,6 +21,8 @@ Complete CLI reference for all modules, flags, and features.
 - [Event Enrichment](#event-enrichment)
 - [Output Formats](#output-formats)
 - [Configuration File](#configuration-file)
+  - [Profiles](#profiles)
+  - [Validating a Config](#validating-a-config)
 - [Count Mode](#count-mode)
 - [Runtime Filter Control](#runtime-filter-control)
   - [Interactive Mode](#interactive-mode)
@@ -37,6 +39,7 @@ Complete CLI reference for all modules, flags, and features.
 |---|---|
 | `--module <name[,name...]>` | Module(s) to run (required unless `--config`). Comma-separated for multi-module. |
 | `--config <path>` | Load the trace spec from a YAML file (governs modules and output). See [Configuration File](#configuration-file). |
+| `--profile <name>` | Select a profile from the `--config` file (default: the file's `default`). See [Profiles](#profiles). |
 | `--output <format>` | Output format: `text` (default) or `json`. |
 | `--enrich <opts>` | Enrichment: `time`, `proc`, `user`, `all` (comma-separated). |
 | `--fields <a,b,c>` | Project output to these fields (comma-separated); text becomes `key=value`, JSON keeps only these keys. |
@@ -515,6 +518,73 @@ sudo ./bin/veil --config trace.yaml
 With `--config`, the file governs the modules and output; trace-defining flags
 passed alongside it are ignored with a warning. The operational flags
 `--control`, `--pprof`, and `--yes` still apply and override the file.
+
+### Profiles
+
+A single file can hold several named traces under `profiles:`, picked with
+`--profile <name>`. This replaces the top-level `modules`/`output`/`run` -- a
+file uses one form or the other, not both. Each profile is a complete,
+independent trace; they do not inherit anything from each other or from a
+file-level default.
+
+```yaml
+default: overview             # used when --profile is omitted (optional)
+
+profiles:
+  overview:
+    modules:
+      - name: syscall
+        flags: { name: nginx }
+    output:
+      count_by: syscall
+
+  triage:
+    modules:
+      - name: syscall
+        flags: { pid: [1234] }
+      - name: network
+        flags: { pid: [1234] }
+    output:
+      enrich: [time, proc]
+```
+
+```bash
+sudo ./bin/veil --config web.yaml --profile triage
+sudo ./bin/veil --config web.yaml                 # runs 'overview' (the default)
+```
+
+Without a `default`, a multi-profile file requires `--profile`; it errors and
+lists the available profiles otherwise. `--profile` needs `--config`, and does
+not apply to a single-profile file.
+
+### Validating a Config
+
+`veil config validate <path>...` checks one or more config files without
+touching the kernel: YAML structure, module and flag names, per-module flag
+parsing, and syscall-name resolution against the host's table. It needs no root
+and loads no BPF, so it suits a CI step or a quick pre-flight. Every profile in
+a multi-profile file is checked, not just the one that would run. It exits
+non-zero if any file (or any profile) fails.
+
+```bash
+$ ./bin/veil config validate examples/*.yaml
+ok: examples/incident-triage.yaml (3 modules: syscall, files, network; output text)
+ok: examples/network-audit.yaml (1 module: network; output json)
+ok: examples/web-service.yaml [connections] (1 module: network; output json)
+ok: examples/web-service.yaml [overview] (1 module: syscall; output text)
+ok: examples/web-service.yaml [triage] (3 modules: syscall, files, network; output text)
+
+$ ./bin/veil config validate broken.yaml
+error: broken.yaml: syscall: unknown syscall name "epoll_wait"
+
+Did you mean:
+epoll_pwait
+epoll_pwait2
+```
+
+Syscall names are architecture-specific -- `epoll_wait` exists on x86_64 but not
+arm64, where the call is `epoll_pwait` -- so validation resolves them against
+the table for the host it runs on, and suggests near matches on a miss.
 
 ---
 
