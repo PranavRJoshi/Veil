@@ -7,10 +7,11 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/config"
 )
 
-// Every shipped example must load against the real registry. This fails the
-// moment an example references a module or flag that has been renamed or
-// removed, so the docs cannot silently drift from the code. The blank module
-// imports in main.go populate the registry that config.Load validates against.
+// Every shipped example must load against the real registry, across all of its
+// profiles. This fails the moment an example references a module or flag that
+// has been renamed or removed, so the docs cannot silently drift from the code.
+// The blank module imports in main.go populate the registry that config
+// validates against.
 func TestExampleConfigsLoad(t *testing.T) {
 	files, err := filepath.Glob("../../examples/*.yaml")
 	if err != nil {
@@ -23,12 +24,14 @@ func TestExampleConfigsLoad(t *testing.T) {
 	for _, f := range files {
 		f := f
 		t.Run(filepath.Base(f), func(t *testing.T) {
-			sp, err := config.Load(f)
+			all, err := config.LoadAll(f)
 			if err != nil {
-				t.Fatalf("Load: %v", err)
+				t.Fatalf("LoadAll: %v", err)
 			}
-			if len(sp.Modules) == 0 {
-				t.Error("config produced no modules")
+			for name, sp := range all {
+				if len(sp.Modules) == 0 {
+					t.Errorf("profile %q produced no modules", name)
+				}
 			}
 		})
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/PranavRJoshi/Veil/internal/config"
@@ -36,36 +37,67 @@ func runConfigCmd(prog string, args []string) int {
 
 /*
 	validateConfig runs a config through everything a load checks that needs no
-	kernel: structure and module/flag names (config.Load), per-module flag
+	kernel: structure and module/flag names (config.LoadAll), per-module flag
 	parsing (the factory runs ParseFilterConfig), and value resolution for
-	modules that implement runner.ConfigValidator (syscall names).
+	modules that implement runner.ConfigValidator (syscall names). Every profile
+	in the file is checked, not just the one that would run.
 */
 func validateConfig(path string) error {
-	sp, err := config.Load(path)
+	all, err := config.LoadAll(path)
 	if err != nil {
-		return err // config.Load already prefixes the path
+		return err // config.LoadAll already prefixes the path
 	}
 
+	names := make([]string, 0, len(all))
+	for name := range all {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		sp := all[name]
+		if err := validateSpec(sp); err != nil {
+			return fmt.Errorf("%s%s: %w", path, profileTag(name), err)
+		}
+		fmt.Printf("ok: %s%s (%s)\n", path, profileTag(name), summary(sp))
+	}
+	return nil
+}
+
+// validateSpec constructs each module (running its ParseFilterConfig) and runs
+// any offline value checks, without loading BPF.
+func validateSpec(sp spec.Spec) error {
 	for _, m := range sp.Modules {
-		info, _ := registry.Get(m.Name) // config.Load validated the name
+		info, _ := registry.Get(m.Name) // config validated the name
 		mod, err := info.Factory(m.Flags, discardSink{})
 		if err != nil {
-			return fmt.Errorf("%s: %w", path, err)
+			return err
 		}
 		if v, ok := mod.(runner.ConfigValidator); ok {
 			if err := v.ValidateConfig(); err != nil {
-				return fmt.Errorf("%s: %w", path, err)
+				return err
 			}
 		}
 	}
+	return nil
+}
 
+func summary(sp spec.Spec) string {
 	noun := "modules"
 	if len(sp.Modules) == 1 {
 		noun = "module"
 	}
-	fmt.Printf("ok: %s (%d %s: %s; output %s)\n",
-		path, len(sp.Modules), noun, strings.Join(sp.Names(), ", "), outputFormat(sp))
-	return nil
+	return fmt.Sprintf("%d %s: %s; output %s",
+		len(sp.Modules), noun, strings.Join(sp.Names(), ", "), outputFormat(sp))
+}
+
+// profileTag renders " [name]" for a named profile, or "" for a single-profile
+// file (whose key is empty).
+func profileTag(name string) string {
+	if name == "" {
+		return ""
+	}
+	return fmt.Sprintf(" [%s]", name)
 }
 
 func outputFormat(sp spec.Spec) string {

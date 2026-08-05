@@ -18,6 +18,7 @@ type Config struct {
 	Module      string            /* comma-separated module names */
 	ModuleFlags map[string]string /* shared module key=value flags */
 	ConfigPath  string            /* --config <path>: load spec from YAML */
+	ProfileName string            /* --profile <name>: select a profile from --config */
 	ControlPath string            /* --control <path>: Unix socket */
 	EnrichFlags string            /* --enrich <opts>: time,proc,user,all */
 	Fields      string            /* --fields <a,b,c>: project output to these fields */
@@ -87,6 +88,7 @@ const globalUsage = `Usage: veil --module <name[,name...]> [module-flags...]
 Global flags:
   --module <name>    Select the module to run (required unless --config)
   --config <path>    Load the trace spec from a YAML file (governs modules/output)
+  --profile <name>   Select a profile from the --config file (default: the file's default)
   --list-modules     List available modules and exit
   --output <format>  Output format: text (default), json
   --enrich <opts>    Enable enrichment: time, proc, user, all (comma-separated)
@@ -283,6 +285,13 @@ func Parse(args []string) (Config, error) {
 			i++
 			cfg.ConfigPath = args[i]
 
+		case arg == "--profile":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--profile requires a name")
+			}
+			i++
+			cfg.ProfileName = args[i]
+
 		case arg == "--control":
 			if i+1 >= len(args) {
 				return cfg, fmt.Errorf("--control requires a socket path")
@@ -359,6 +368,10 @@ func Parse(args []string) (Config, error) {
 		}
 
 		i++
+	}
+
+	if cfg.ProfileName != "" && cfg.ConfigPath == "" {
+		return cfg, fmt.Errorf("--profile requires --config")
 	}
 
 	/*

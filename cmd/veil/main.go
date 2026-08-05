@@ -412,7 +412,7 @@ func loadSpec(cfg cli.Config) (spec.Spec, error) {
 		return cfg.ToSpec(), nil
 	}
 
-	sp, err := config.Load(cfg.ConfigPath)
+	sp, err := config.Load(cfg.ConfigPath, cfg.ProfileName)
 	if err != nil {
 		return spec.Spec{}, err
 	}

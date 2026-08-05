@@ -71,7 +71,7 @@ run:
   yes: true
 `)
 
-	sp, err := Load(path)
+	sp, err := Load(path, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestLoad_BoolFlag(t *testing.T) {
 	setupRegistry(t)
 
 	// latency: true is emitted as "true"; latency: false is omitted entirely.
-	on, err := Load(writeConfig(t, "modules:\n  - name: uprobe\n    flags:\n      latency: true\n"))
+	on, err := Load(writeConfig(t, "modules:\n  - name: uprobe\n    flags:\n      latency: true\n"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestLoad_BoolFlag(t *testing.T) {
 		t.Errorf("latency true = %q, want \"true\"", on.Modules[0].Flags["latency"])
 	}
 
-	off, err := Load(writeConfig(t, "modules:\n  - name: uprobe\n    flags:\n      latency: false\n"))
+	off, err := Load(writeConfig(t, "modules:\n  - name: uprobe\n    flags:\n      latency: false\n"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ modules:
     flags:
       pid: [2]
       uprobe: /bin/bash:readline
-`))
+`), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestLoad_Errors(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := Load(writeConfig(t, body)); err == nil {
+			if _, err := Load(writeConfig(t, body), ""); err == nil {
 				t.Errorf("expected error for %s", name)
 			}
 		})
@@ -177,15 +177,138 @@ func TestLoad_Errors(t *testing.T) {
 
 func TestLoad_MissingFile(t *testing.T) {
 	setupRegistry(t)
-	if _, err := Load(filepath.Join(t.TempDir(), "absent.yaml")); err == nil {
+	if _, err := Load(filepath.Join(t.TempDir(), "absent.yaml"), ""); err == nil {
 		t.Error("expected error for missing file")
 	}
 }
 
-// FuzzDecode drives arbitrary bytes through the flag-lowering path. Whatever
-// decodes must satisfy the loader's invariants: no module survives that the
-// registry rejects, and a negatable allow value never keeps a deny marker --
-// the '!' is split into the _deny key.
+const multiProfile = `
+default: triage
+profiles:
+  triage:
+    modules:
+      - name: syscall
+        flags:
+          pid: [1]
+  audit:
+    modules:
+      - name: uprobe
+        flags:
+          uprobe: /bin/sh:main
+    output:
+      format: json
+`
+
+func TestLoad_ProfileSelect(t *testing.T) {
+	setupRegistry(t)
+	path := writeConfig(t, multiProfile)
+
+	audit, err := Load(path, "audit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.Modules) != 1 || audit.Modules[0].Name != "uprobe" {
+		t.Errorf("audit modules = %+v", audit.Modules)
+	}
+	if audit.Output.Format != "json" {
+		t.Errorf("audit output = %q, want json", audit.Output.Format)
+	}
+
+	// Empty profile takes the file's default (triage).
+	def, err := Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(def.Modules) != 1 || def.Modules[0].Name != "syscall" {
+		t.Errorf("default modules = %+v, want triage/syscall", def.Modules)
+	}
+}
+
+func TestLoad_UnknownProfileSuggests(t *testing.T) {
+	setupRegistry(t)
+	_, err := Load(writeConfig(t, multiProfile), "traige")
+	if err == nil {
+		t.Fatal("expected error for unknown profile")
+	}
+	if !strings.Contains(err.Error(), "triage") {
+		t.Errorf("error lacks suggestion: %v", err)
+	}
+}
+
+func TestLoad_ProfileErrors(t *testing.T) {
+	setupRegistry(t)
+
+	cases := map[string]struct {
+		body    string
+		profile string
+	}{
+		"profile on single-profile file": {
+			"modules:\n  - name: syscall\n    flags:\n      pid: [1]\n", "audit",
+		},
+		"mixed top-level and profiles": {
+			"modules:\n  - name: syscall\nprofiles:\n  a:\n    modules:\n      - name: syscall\n", "",
+		},
+		"no profile selected, no default": {
+			"profiles:\n  a:\n    modules:\n      - name: syscall\n        flags:\n          pid: [1]\n  b:\n    modules:\n      - name: uprobe\n        flags:\n          uprobe: /bin/sh:main\n", "",
+		},
+		"default names missing profile": {
+			"default: zzz\nprofiles:\n  a:\n    modules:\n      - name: syscall\n        flags:\n          pid: [1]\n", "",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(writeConfig(t, tc.body), tc.profile); err == nil {
+				t.Errorf("expected error for %s", name)
+			}
+		})
+	}
+}
+
+func TestLoadAll_Profiles(t *testing.T) {
+	setupRegistry(t)
+
+	all, err := LoadAll(writeConfig(t, multiProfile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("want 2 profiles, got %d: %v", len(all), all)
+	}
+	if _, ok := all["triage"]; !ok {
+		t.Error("missing triage profile")
+	}
+	if _, ok := all["audit"]; !ok {
+		t.Error("missing audit profile")
+	}
+}
+
+func TestLoadAll_SingleProfileKey(t *testing.T) {
+	setupRegistry(t)
+
+	all, err := LoadAll(writeConfig(t, "modules:\n  - name: syscall\n    flags:\n      pid: [1]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("want 1 entry, got %d", len(all))
+	}
+	if _, ok := all[""]; !ok {
+		t.Errorf("single-profile file should key on \"\", got %v", all)
+	}
+}
+
+func TestLoadAll_MixedError(t *testing.T) {
+	setupRegistry(t)
+	body := "modules:\n  - name: syscall\nprofiles:\n  a:\n    modules:\n      - name: syscall\n"
+	if _, err := LoadAll(writeConfig(t, body)); err == nil {
+		t.Error("expected error for mixed form")
+	}
+}
+
+// FuzzDecode drives arbitrary bytes through the flag-lowering path, across
+// every profile in the file. Whatever decodes must satisfy the loader's
+// invariants: no module survives that the registry rejects, and a negatable
+// allow value never keeps a deny marker -- the '!' is split into the _deny key.
 func FuzzDecode(f *testing.F) {
 	registry.Reset()
 	f.Cleanup(registry.Reset)
@@ -195,6 +318,7 @@ func FuzzDecode(f *testing.F) {
 		"modules:\n  - name: syscall\n    flags:\n      pid: [1, 2]\n      syscall: [openat, \"!ioctl\"]\n",
 		"modules:\n  - name: uprobe\n    flags:\n      latency: true\n      uprobe: /bin/sh:main\n",
 		"modules:\n  - name: syscall\n    flags:\n      pid: \"!5\"\noutput:\n  count_by: syscall\n",
+		"default: a\nprofiles:\n  a:\n    modules:\n      - name: syscall\n        flags:\n          pid: [1]\n",
 		"modules: []\n",
 		"not: valid\n",
 	}
@@ -203,18 +327,24 @@ func FuzzDecode(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		sp, err := decode(data)
+		parsed, err := parse(data)
 		if err != nil {
 			return
 		}
-		for _, m := range sp.Modules {
-			info, ok := registry.Get(m.Name)
-			if !ok {
-				t.Fatalf("decoded unregistered module %q", m.Name)
-			}
-			for _, d := range info.Flags {
-				if d.Negatable && strings.Contains(m.Flags[d.Name], "!") {
-					t.Fatalf("negatable flag %q kept deny marker: %q", d.Name, m.Flags[d.Name])
+		all, err := parsed.all()
+		if err != nil {
+			return
+		}
+		for _, sp := range all {
+			for _, m := range sp.Modules {
+				info, ok := registry.Get(m.Name)
+				if !ok {
+					t.Fatalf("decoded unregistered module %q", m.Name)
+				}
+				for _, d := range info.Flags {
+					if d.Negatable && strings.Contains(m.Flags[d.Name], "!") {
+						t.Fatalf("negatable flag %q kept deny marker: %q", d.Name, m.Flags[d.Name])
+					}
 				}
 			}
 		}

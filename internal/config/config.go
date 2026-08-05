@@ -2,12 +2,18 @@
 // of the same Spec the CLI produces: modules, filters, output shaping, and
 // operational settings. Module and flag names are validated against the
 // registry so this package holds no per-module knowledge of its own.
+//
+// A file is either single-profile (top-level modules/output/run) or holds a
+// map of named profiles selected with --profile. Profiles are self-contained;
+// they do not inherit top-level defaults.
 package config
 
 import (
 	"bytes"
 	"fmt"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -15,18 +21,33 @@ import (
 	"github.com/PranavRJoshi/Veil/internal/cli"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/spec"
+	"github.com/PranavRJoshi/Veil/internal/suggest"
 )
 
 /*
-	The on-disk schema. Each module carries its own flags, so unlike the CLI
-	(one shared flag map) a config file can filter each module differently.
-	Negatable flags use a '!' prefix for deny values, as on the command line.
+	The on-disk schema. The single-profile fields inline at the top level so
+	the common case stays flat; a multi-profile file instead fills profiles
+	(and optionally names a default). The two forms are mutually exclusive.
 */
 type file struct {
+	profile  `yaml:",inline"`
+	Profiles map[string]profile `yaml:"profiles"`
+	Default  string             `yaml:"default"`
+}
+
+/*
+	A profile is one complete trace. Each module carries its own flags, so
+	unlike the CLI (one shared flag map) a config file can filter each module
+	differently. Negatable flags use a '!' prefix for deny values, as on the
+	command line.
+*/
+type profile struct {
 	Modules []moduleEntry `yaml:"modules"`
 	Output  outputEntry   `yaml:"output"`
 	Run     runEntry      `yaml:"run"`
 }
+
+func (p profile) isEmpty() bool { return reflect.DeepEqual(p, profile{}) }
 
 type moduleEntry struct {
 	Name  string               `yaml:"name"`
@@ -79,39 +100,150 @@ type runEntry struct {
 	Yes     bool   `yaml:"yes"`
 }
 
-// Load reads path and decodes it into a spec.Spec. Unknown keys and unknown
-// module or flag names are rejected so a typo fails loudly rather than being
-// silently ignored.
-func Load(path string) (spec.Spec, error) {
-	data, err := os.ReadFile(path)
+// Load reads path and decodes the selected profile into a spec.Spec. profile
+// is "" for a single-profile file or to take the file's default. Unknown keys
+// and unknown module or flag names are rejected so a typo fails loudly.
+func Load(path, profile string) (spec.Spec, error) {
+	f, err := parseFile(path)
 	if err != nil {
 		return spec.Spec{}, err
 	}
-	sp, err := decode(data)
+	p, err := f.selectProfile(profile)
+	if err != nil {
+		return spec.Spec{}, fmt.Errorf("%s: %w", path, err)
+	}
+	sp, err := p.toSpec()
 	if err != nil {
 		return spec.Spec{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return sp, nil
 }
 
-func decode(data []byte) (spec.Spec, error) {
+// LoadAll decodes every profile in a file, keyed by name. A single-profile
+// file yields one entry under "". It is what `config validate` uses to check
+// all profiles at once.
+func LoadAll(path string) (map[string]spec.Spec, error) {
+	f, err := parseFile(path)
+	if err != nil {
+		return nil, err
+	}
+	all, err := f.all()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return all, nil
+}
+
+func parseFile(path string) (file, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return file{}, err
+	}
+	f, err := parse(data)
+	if err != nil {
+		return file{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return f, nil
+}
+
+func parse(data []byte) (file, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 
 	var f file
 	if err := dec.Decode(&f); err != nil {
-		return spec.Spec{}, err
+		return file{}, err
 	}
-	return f.toSpec()
+	return f, nil
 }
 
-func (f file) toSpec() (spec.Spec, error) {
-	if len(f.Modules) == 0 {
+// selectProfile resolves the single trace to run, enforcing that a file uses
+// exactly one form (top-level or profiles) and that --profile is applied only
+// where it makes sense.
+func (f file) selectProfile(name string) (profile, error) {
+	hasProfiles := len(f.Profiles) > 0
+	hasTop := !f.profile.isEmpty()
+
+	switch {
+	case hasProfiles && hasTop:
+		return profile{}, fmt.Errorf("config mixes top-level modules with profiles")
+	case !hasProfiles && !hasTop:
+		return profile{}, fmt.Errorf("config defines no modules")
+	case !hasProfiles:
+		if name != "" {
+			return profile{}, fmt.Errorf("config has no profiles; --profile %q is not applicable", name)
+		}
+		return f.profile, nil
+	}
+
+	if name == "" {
+		name = f.Default
+	}
+	if name == "" {
+		return profile{}, fmt.Errorf("config defines profiles [%s]; select one with --profile",
+			strings.Join(f.profileNames(), ", "))
+	}
+	p, ok := f.Profiles[name]
+	if !ok {
+		if hints := suggest.Closest(name, f.profileNames(), 3); len(hints) > 0 {
+			return profile{}, fmt.Errorf("unknown profile %q\n\ndid you mean:\n%s", name, strings.Join(hints, ", "))
+		}
+		return profile{}, fmt.Errorf("unknown profile %q; available: %s", name, strings.Join(f.profileNames(), ", "))
+	}
+	return p, nil
+}
+
+// all returns every profile's spec, validating the file's form and that a
+// named default exists.
+func (f file) all() (map[string]spec.Spec, error) {
+	hasProfiles := len(f.Profiles) > 0
+	hasTop := !f.profile.isEmpty()
+
+	switch {
+	case hasProfiles && hasTop:
+		return nil, fmt.Errorf("config mixes top-level modules with profiles")
+	case !hasProfiles && !hasTop:
+		return nil, fmt.Errorf("config defines no modules")
+	case !hasProfiles:
+		sp, err := f.profile.toSpec()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]spec.Spec{"": sp}, nil
+	}
+
+	if f.Default != "" {
+		if _, ok := f.Profiles[f.Default]; !ok {
+			return nil, fmt.Errorf("default %q is not a defined profile", f.Default)
+		}
+	}
+	out := make(map[string]spec.Spec, len(f.Profiles))
+	for name, p := range f.Profiles {
+		sp, err := p.toSpec()
+		if err != nil {
+			return nil, fmt.Errorf("profile %q: %w", name, err)
+		}
+		out[name] = sp
+	}
+	return out, nil
+}
+
+func (f file) profileNames() []string {
+	names := make([]string, 0, len(f.Profiles))
+	for name := range f.Profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (p profile) toSpec() (spec.Spec, error) {
+	if len(p.Modules) == 0 {
 		return spec.Spec{}, fmt.Errorf("config defines no modules")
 	}
 
 	var mods []spec.Module
-	for _, m := range f.Modules {
+	for _, m := range p.Modules {
 		flags, err := lowerFlags(m)
 		if err != nil {
 			return spec.Spec{}, err
@@ -120,20 +252,20 @@ func (f file) toSpec() (spec.Spec, error) {
 	}
 
 	out := spec.Output{
-		Format:   f.Output.Format,
-		Enrich:   strings.Join(f.Output.Enrich, ","),
-		Fields:   f.Output.Fields,
-		Count:    f.Output.Count || f.Output.CountBy != "",
-		CountKey: f.Output.CountBy,
+		Format:   p.Output.Format,
+		Enrich:   strings.Join(p.Output.Enrich, ","),
+		Fields:   p.Output.Fields,
+		Count:    p.Output.Count || p.Output.CountBy != "",
+		CountKey: p.Output.CountBy,
 	}
 
 	return spec.Spec{
 		Modules: mods,
 		Output:  out,
 		Run: spec.Run{
-			ControlPath: f.Run.Control,
-			PprofPath:   f.Run.Pprof,
-			AssumeYes:   f.Run.Yes,
+			ControlPath: p.Run.Control,
+			PprofPath:   p.Run.Pprof,
+			AssumeYes:   p.Run.Yes,
 		},
 	}, nil
 }

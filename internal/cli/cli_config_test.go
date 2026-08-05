@@ -23,6 +23,29 @@ func TestParseConfigMissingValue(t *testing.T) {
 	}
 }
 
+func TestParseProfileWithConfig(t *testing.T) {
+	cfg, err := Parse([]string{"--config", "veil.yaml", "--profile", "audit"})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.ProfileName != "audit" {
+		t.Errorf("ProfileName = %q, want audit", cfg.ProfileName)
+	}
+}
+
+// --profile is a selector for --config; it is meaningless on its own.
+func TestParseProfileRequiresConfig(t *testing.T) {
+	if _, err := Parse([]string{"--profile", "audit"}); err == nil {
+		t.Error("expected error for --profile without --config")
+	}
+}
+
+func TestParseProfileMissingValue(t *testing.T) {
+	if _, err := Parse([]string{"--config", "veil.yaml", "--profile"}); err == nil {
+		t.Error("expected error when --profile has no value")
+	}
+}
+
 func TestTraceFlags(t *testing.T) {
 	c := Config{
 		Module:      "syscall",

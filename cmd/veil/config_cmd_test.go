@@ -56,6 +56,48 @@ func TestValidateConfig_BadDenySyscall(t *testing.T) {
 	}
 }
 
+// Every profile in a multi-profile file is validated, and a failure names the
+// offending profile.
+func TestValidateConfig_MultiProfile(t *testing.T) {
+	good := writeConfig(t, `
+profiles:
+  a:
+    modules:
+      - name: syscall
+        flags:
+          syscall: [openat]
+  b:
+    modules:
+      - name: files
+        flags:
+          op: [read]
+`)
+	if err := validateConfig(good); err != nil {
+		t.Fatalf("multi-profile config rejected: %v", err)
+	}
+
+	bad := writeConfig(t, `
+profiles:
+  ok:
+    modules:
+      - name: syscall
+        flags:
+          syscall: [openat]
+  broken:
+    modules:
+      - name: syscall
+        flags:
+          syscall: [opena]
+`)
+	err := validateConfig(bad)
+	if err == nil {
+		t.Fatal("expected error for the broken profile")
+	}
+	if !strings.Contains(err.Error(), "[broken]") {
+		t.Errorf("error should name the failing profile: %v", err)
+	}
+}
+
 // Structural problems surface through config.Load.
 func TestValidateConfig_UnknownModule(t *testing.T) {
 	path := writeConfig(t, "modules:\n  - name: nope\n")
