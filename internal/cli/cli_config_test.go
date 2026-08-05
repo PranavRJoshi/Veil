@@ -2,8 +2,23 @@ package cli
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
+
+func TestParseUnknownModuleSuggests(t *testing.T) {
+	_, err := Parse([]string{"--module", "syscal"})
+	if err == nil || !strings.Contains(err.Error(), "syscall") {
+		t.Errorf("want syscall suggestion, got %v", err)
+	}
+}
+
+func TestParseUnknownFlagSuggests(t *testing.T) {
+	_, err := Parse([]string{"--module", "syscall", "--pi", "1"})
+	if err == nil || !strings.Contains(err.Error(), "--pid") {
+		t.Errorf("want --pid suggestion, got %v", err)
+	}
+}
 
 // With --config the trace-defining flags are neither required nor validated;
 // the config file governs them.

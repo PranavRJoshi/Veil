@@ -31,6 +31,7 @@ import (
 	"sync"
 
 	"github.com/PranavRJoshi/Veil/internal/registry"
+	"github.com/PranavRJoshi/Veil/internal/suggest"
 )
 
 /*
@@ -87,6 +88,9 @@ func ValidateKeyField(field string) error {
 		names = append(names, k)
 	}
 	sort.Strings(names)
+	if hint := suggest.Hint(field, names, 5); hint != "" {
+		return fmt.Errorf("unknown count-by field %q%s", field, hint)
+	}
 	return fmt.Errorf("unknown count-by field %q; valid fields: %v", field, names)
 }
 

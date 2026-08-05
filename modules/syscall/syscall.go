@@ -235,10 +235,7 @@ func resolveSyscalls(names []string) ([]uint64, error) {
 	for _, name := range names {
 		nr, ok := SyscallNumber(name)
 		if !ok {
-			if hints := suggest.Closest(name, syscallCandidates(), 5); len(hints) > 0 {
-				return nil, fmt.Errorf("syscall: unknown syscall name %q\n\nDid you mean:\n%s", name, strings.Join(hints, "\n"))
-			}
-			return nil, fmt.Errorf("syscall: unknown syscall name %q", name)
+			return nil, fmt.Errorf("syscall: unknown syscall name %q%s", name, suggest.Hint(name, syscallCandidates(), 5))
 		}
 		out = append(out, nr)
 	}

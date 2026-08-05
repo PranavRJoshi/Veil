@@ -16,6 +16,12 @@ import (
 	real modules declare. This mirrors the module registrations without
 	importing the module packages (which would pull in cilium/ebpf).
 */
+func TestValidateKeyFieldSuggests(t *testing.T) {
+	if err := ValidateKeyField("syscal"); err == nil || !strings.Contains(err.Error(), "syscall") {
+		t.Errorf("want syscall suggestion, got %v", err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	registry.Reset()
 	registry.Register(registry.ModuleInfo{

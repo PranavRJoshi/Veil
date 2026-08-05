@@ -185,8 +185,8 @@ func (f file) selectProfile(name string) (profile, error) {
 	}
 	p, ok := f.Profiles[name]
 	if !ok {
-		if hints := suggest.Closest(name, f.profileNames(), 3); len(hints) > 0 {
-			return profile{}, fmt.Errorf("unknown profile %q\n\ndid you mean:\n%s", name, strings.Join(hints, ", "))
+		if hint := suggest.Hint(name, f.profileNames(), 3); hint != "" {
+			return profile{}, fmt.Errorf("unknown profile %q%s", name, hint)
 		}
 		return profile{}, fmt.Errorf("unknown profile %q; available: %s", name, strings.Join(f.profileNames(), ", "))
 	}
@@ -278,7 +278,7 @@ func (p profile) toSpec() (spec.Spec, error) {
 func lowerFlags(m moduleEntry) (map[string]string, error) {
 	info, ok := registry.Get(m.Name)
 	if !ok {
-		return nil, fmt.Errorf("unknown module %q", m.Name)
+		return nil, fmt.Errorf("unknown module %q%s", m.Name, suggest.Hint(m.Name, registry.Names(), 5))
 	}
 
 	defs := make(map[string]registry.FlagDef, len(info.Flags))
@@ -286,11 +286,16 @@ func lowerFlags(m moduleEntry) (map[string]string, error) {
 		defs[d.Name] = d
 	}
 
+	names := make([]string, 0, len(defs))
+	for k := range defs {
+		names = append(names, k)
+	}
+
 	out := make(map[string]string)
 	for name, val := range m.Flags {
 		def, ok := defs[name]
 		if !ok {
-			return nil, fmt.Errorf("module %q: unknown flag %q", m.Name, name)
+			return nil, fmt.Errorf("module %q: unknown flag %q%s", m.Name, name, suggest.Hint(name, names, 5))
 		}
 		switch {
 		case val.isBool:

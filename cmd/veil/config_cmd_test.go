@@ -106,6 +106,14 @@ func TestValidateConfig_UnknownModule(t *testing.T) {
 	}
 }
 
+// A bad count-by key is fatal at runtime, so validation must catch it offline.
+func TestValidateConfig_BadCountBy(t *testing.T) {
+	path := writeConfig(t, "modules:\n  - name: syscall\noutput:\n  count_by: bogus\n")
+	if err := validateConfig(path); err == nil {
+		t.Fatal("expected error for unknown count-by field")
+	}
+}
+
 func TestRunConfigCmd_Usage(t *testing.T) {
 	if code := runConfigCmd("veil", []string{"bogus"}); code != 2 {
 		t.Errorf("unknown subcommand exit = %d, want 2", code)

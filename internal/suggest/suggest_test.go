@@ -2,8 +2,19 @@ package suggest
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
+
+func TestHint(t *testing.T) {
+	got := Hint("opena", syscalls, 5)
+	if !strings.HasPrefix(got, "\n\ndid you mean:\n") || !strings.Contains(got, "openat") {
+		t.Errorf("Hint = %q", got)
+	}
+	if got := Hint("zzzzz", syscalls, 5); got != "" {
+		t.Errorf("Hint with no match = %q, want empty", got)
+	}
+}
 
 var syscalls = []string{
 	"epoll_create1", "epoll_ctl", "epoll_pwait", "epoll_pwait2",
@@ -44,6 +55,15 @@ func TestClosest(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// An adjacent transposition is one edit under Damerau-Levenshtein, so a short
+// swapped word still matches where plain Levenshtein (distance 2) would miss.
+func TestClosestTransposition(t *testing.T) {
+	cands := []string{"port", "pid", "op"}
+	if got := Closest("prot", cands, 3); len(got) == 0 || got[0] != "port" {
+		t.Fatalf("transposition not matched: %v", got)
 	}
 }
 

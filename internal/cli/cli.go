@@ -8,6 +8,7 @@ import (
 
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/spec"
+	"github.com/PranavRJoshi/Veil/internal/suggest"
 )
 
 /*
@@ -343,7 +344,11 @@ func Parse(args []string) (Config, error) {
 			def, ok := flags[arg]
 			switch {
 			case !ok && strings.HasPrefix(arg, "-"):
-				return cfg, fmt.Errorf("unknown flag: %s", arg)
+				names := make([]string, 0, len(flags))
+				for k := range flags {
+					names = append(names, k)
+				}
+				return cfg, fmt.Errorf("unknown flag: %s%s", arg, suggest.Hint(arg, names, 5))
 			case !ok:
 				return cfg, fmt.Errorf("unexpected argument: %s", arg)
 			case !def.HasValue:
@@ -397,6 +402,9 @@ func Parse(args []string) (Config, error) {
 			return cfg, fmt.Errorf("empty module name in --module list")
 		}
 		if _, ok := registry.Get(name); !ok {
+			if hint := suggest.Hint(name, registry.Names(), 5); hint != "" {
+				return cfg, fmt.Errorf("unknown module %q%s", name, hint)
+			}
 			return cfg, fmt.Errorf("unknown module %q; use --list-modules to see available modules", name)
 		}
 	}

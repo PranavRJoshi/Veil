@@ -9,6 +9,19 @@ import (
 
 const minPrefix = 4
 
+// Hint returns a "did you mean" suffix listing the closest candidates to
+// target, or "" if none are close. It is the shared format for every unknown-
+// name error so the wording stays uniform; callers append it to their message:
+//
+//	fmt.Errorf("unknown thing %q%s", name, suggest.Hint(name, valid, 5))
+func Hint(target string, candidates []string, max int) string {
+	m := Closest(target, candidates, max)
+	if len(m) == 0 {
+		return ""
+	}
+	return "\n\ndid you mean:\n" + strings.Join(m, "\n")
+}
+
 // Closest returns up to max candidates similar to target, best first. A
 // candidate qualifies by a small edit distance (a typo) or a shared prefix (a
 // near-miss inside a family of related names, e.g. epoll_pwait for
@@ -85,8 +98,13 @@ func commonPrefix(a, b string) int {
 	return n
 }
 
-// distance is Levenshtein edit distance over bytes; all inputs here are ASCII.
+// distance is Damerau-Levenshtein (optimal string alignment) edit distance
+// over bytes; all inputs here are ASCII. Unlike plain Levenshtein it counts an
+// adjacent transposition as one edit, so a swap like port/prot scores 1 -- the
+// most common typo class. prev2 holds the row from two iterations back, which
+// the transposition case reads.
 func distance(a, b string) int {
+	prev2 := make([]int, len(b)+1)
 	prev := make([]int, len(b)+1)
 	for j := range prev {
 		prev[j] = j
@@ -100,8 +118,13 @@ func distance(a, b string) int {
 				cost = 0
 			}
 			cur[j] = min3(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				if t := prev2[j-2] + 1; t < cur[j] {
+					cur[j] = t
+				}
+			}
 		}
-		prev = cur
+		prev2, prev = prev, cur
 	}
 	return prev[len(b)]
 }

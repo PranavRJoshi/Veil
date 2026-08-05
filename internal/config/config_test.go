@@ -297,6 +297,22 @@ func TestLoadAll_SingleProfileKey(t *testing.T) {
 	}
 }
 
+func TestLoad_UnknownModuleSuggests(t *testing.T) {
+	setupRegistry(t)
+	_, err := Load(writeConfig(t, "modules:\n  - name: syscal\n"), "")
+	if err == nil || !strings.Contains(err.Error(), "syscall") {
+		t.Errorf("want syscall suggestion, got %v", err)
+	}
+}
+
+func TestLoad_UnknownFlagSuggests(t *testing.T) {
+	setupRegistry(t)
+	_, err := Load(writeConfig(t, "modules:\n  - name: syscall\n    flags:\n      pi: [1]\n"), "")
+	if err == nil || !strings.Contains(err.Error(), "pid") {
+		t.Errorf("want pid suggestion, got %v", err)
+	}
+}
+
 func TestLoadAll_MixedError(t *testing.T) {
 	setupRegistry(t)
 	body := "modules:\n  - name: syscall\nprofiles:\n  a:\n    modules:\n      - name: syscall\n"

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/PranavRJoshi/Veil/internal/config"
+	"github.com/PranavRJoshi/Veil/internal/count"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/runner"
 	"github.com/PranavRJoshi/Veil/internal/spec"
@@ -65,7 +66,8 @@ func validateConfig(path string) error {
 }
 
 // validateSpec constructs each module (running its ParseFilterConfig) and runs
-// any offline value checks, without loading BPF.
+// any offline value checks, without loading BPF. It also checks the output's
+// count-by key, which the run treats as fatal.
 func validateSpec(sp spec.Spec) error {
 	for _, m := range sp.Modules {
 		info, _ := registry.Get(m.Name) // config validated the name
@@ -77,6 +79,11 @@ func validateSpec(sp spec.Spec) error {
 			if err := v.ValidateConfig(); err != nil {
 				return err
 			}
+		}
+	}
+	if sp.Output.Count && sp.Output.CountKey != "" {
+		if err := count.ValidateKeyField(sp.Output.CountKey); err != nil {
+			return err
 		}
 	}
 	return nil
