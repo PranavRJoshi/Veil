@@ -71,6 +71,21 @@ func TestTextSink_CustomFormat(t *testing.T) {
 	}
 }
 
+func TestTextSink_Colorize(t *testing.T) {
+	var buf bytes.Buffer
+	format := func(mod string, f map[string]interface{}) string { return mod + ":line" }
+	sink := NewTextSink(&buf, format).WithColorize(func(mod, line string) string {
+		return "<" + mod + ">" + line
+	})
+	if err := sink.Emit("syscall", sampleFields()); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	// colorize must wrap the formatted line, and see both module and content.
+	if got := strings.TrimSpace(buf.String()); got != "<syscall>syscall:line" {
+		t.Errorf("expected colorize to wrap the line, got %q", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // JSONSink
 // ---------------------------------------------------------------------------

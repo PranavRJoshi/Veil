@@ -5,6 +5,8 @@ package suggest
 import (
 	"sort"
 	"strings"
+
+	"github.com/PranavRJoshi/Veil/internal/color"
 )
 
 const minPrefix = 4
@@ -19,7 +21,7 @@ func Hint(target string, candidates []string, max int) string {
 	if len(m) == 0 {
 		return ""
 	}
-	return "\n\ndid you mean:\n" + strings.Join(m, "\n")
+	return "\n\n" + color.Stderr.Dim("did you mean:\n"+strings.Join(m, "\n"))
 }
 
 // Closest returns up to max candidates similar to target, best first. A

@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/PranavRJoshi/Veil/internal/cli"
+	"github.com/PranavRJoshi/Veil/internal/color"
 	"github.com/PranavRJoshi/Veil/internal/config"
 	"github.com/PranavRJoshi/Veil/internal/control"
 	"github.com/PranavRJoshi/Veil/internal/count"
@@ -36,6 +37,9 @@ import (
 )
 
 func main() {
+	// --color is not known until Parse succeeds; parse-time messages use auto.
+	color.Init("auto")
+
 	// The "config" verb is a subcommand, not a flag; handle it before the
 	// flag parser and before any kernel work (validation is kernel-free).
 	if args := os.Args[1:]; len(args) > 0 && args[0] == "config" {
@@ -44,10 +48,11 @@ func main() {
 
 	cfg, err := cli.Parse(os.Args[1:])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s %v\n", color.Stderr.Red("error:"), err)
 		cli.Usage()
 		os.Exit(1)
 	}
+	color.Init(cfg.ColorMode)
 
 	if cfg.ShowHelp {
 		cli.Usage()
@@ -65,13 +70,13 @@ func main() {
 		cryptic load error.
 	*/
 	if err := kernel.Preflight(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s %v\n", color.Stderr.Red("error:"), err)
 		os.Exit(1)
 	}
 
 	sp, err := loadSpec(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s %v\n", color.Stderr.Red("error:"), err)
 		os.Exit(1)
 	}
 
@@ -143,7 +148,13 @@ func main() {
 		if len(sp.Output.Fields) > 0 {
 			format = output.FieldsFormat(sp.Output.Fields)
 		}
-		baseSink = output.NewTextSink(os.Stdout, format)
+		ts := output.NewTextSink(os.Stdout, format)
+		// A single module gains nothing from a uniform tint; only distinguish
+		// modules when several run and stdout color is on.
+		if len(sp.Modules) > 1 && color.Stdout.Enabled() {
+			ts.WithColorize(moduleColorizer(sp.Names()))
+		}
+		baseSink = ts
 	}
 	pausable := output.NewPausableSink(baseSink)
 	defer baseSink.Close()
@@ -170,8 +181,8 @@ func main() {
 					enrich.WithProcName(), enrich.WithUserName())
 			default:
 				fmt.Fprintf(os.Stderr,
-					"warning: unknown enricher %q (valid: time, proc, user, all)\n",
-					name)
+					"%s unknown enricher %q (valid: time, proc, user, all)\n",
+					color.Stderr.Yellow("warning:"), name)
 			}
 		}
 		if len(opts) > 0 {
@@ -194,15 +205,15 @@ func main() {
 		if sp.Output.CountKey != "" {
 			/* First check if the user provided a valid key */
 			if err := count.ValidateKeyField(sp.Output.CountKey); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "%s %v\n", color.Stderr.Red("error:"), err)
 				os.Exit(1)
 			}
 		}
 		if sp.Output.Enrich != "" {
-			fmt.Fprintln(os.Stderr, "warning: --enrich has no observable effect in conjunction with --count")
+			fmt.Fprintf(os.Stderr, "%s --enrich has no observable effect in conjunction with --count\n", color.Stderr.Yellow("warning:"))
 		}
 		if len(sp.Output.Fields) > 0 {
-			fmt.Fprintln(os.Stderr, "warning: --fields has no observable effect in conjunction with --count")
+			fmt.Fprintf(os.Stderr, "%s --fields has no observable effect in conjunction with --count\n", color.Stderr.Yellow("warning:"))
 		}
 		countSink = count.NewCountSink(os.Stderr, 10)
 		if sp.Output.CountKey != "" {
@@ -225,7 +236,7 @@ func main() {
 
 		mod, err := info.Factory(m.Flags, sink)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error creating module: %v\n", err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", color.Stderr.Red("error creating module:"), err)
 			os.Exit(1)
 		}
 		modules = append(modules, mod)
@@ -243,7 +254,7 @@ func main() {
 			continue
 		}
 		if err := confirmHighVolume(reason, sp.Run.AssumeYes); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", color.Stderr.Red("error:"), err)
 			os.Exit(1)
 		}
 	}
@@ -256,7 +267,7 @@ func main() {
 	*/
 	mr := runner.New(modules...)
 	if err := mr.LoadAll(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s %v\n", color.Stderr.Red("error:"), err)
 		os.Exit(1)
 	}
 	defer mr.CloseAll()
@@ -286,7 +297,7 @@ func main() {
 	if sp.Run.ControlPath != "" {
 		srv := control.NewServer(sp.Run.ControlPath, handler)
 		if err := srv.Start(); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: control socket %v\n", err)
+			fmt.Fprintf(os.Stderr, "%s control socket %v\n", color.Stderr.Yellow("warning:"), err)
 		} else {
 			defer srv.Stop()
 			fmt.Fprintf(os.Stderr, "control socket: %s\n", sp.Run.ControlPath)
@@ -402,6 +413,23 @@ func moduleFormatters() map[string]output.TextFormatFunc {
 }
 
 /*
+	moduleColorizer returns a per-module line tinter for the text sink. Colors
+	are assigned by sorted module name so a given module keeps the same color
+	across runs regardless of --module order.
+*/
+func moduleColorizer(names []string) func(module, line string) string {
+	sorted := append([]string(nil), names...)
+	sort.Strings(sorted)
+	idx := make(map[string]int, len(sorted))
+	for i, name := range sorted {
+		idx[name] = i
+	}
+	return func(module, line string) string {
+		return color.Stdout.Paint(idx[module], line)
+	}
+}
+
+/*
 	loadSpec resolves the run's spec. With --config the file governs modules
 	and output; any trace-defining CLI flags are ignored with a warning, while
 	operational flags (control, pprof, yes) layer on top and win when set.
@@ -418,7 +446,7 @@ func loadSpec(cfg cli.Config) (spec.Spec, error) {
 	}
 
 	if ignored := cfg.TraceFlags(); len(ignored) > 0 {
-		fmt.Fprintf(os.Stderr, "warning: --config governs the run; ignoring %s\n", strings.Join(ignored, ", "))
+		fmt.Fprintf(os.Stderr, "%s --config governs the run; ignoring %s\n", color.Stderr.Yellow("warning:"), strings.Join(ignored, ", "))
 	}
 
 	if cfg.ControlPath != "" {

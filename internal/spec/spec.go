@@ -26,6 +26,7 @@ type Run struct {
 	ControlPath string
 	PprofPath   string
 	AssumeYes   bool
+	ColorMode   string // "auto" (default), "always", or "never"
 }
 
 func (s Spec) Names() []string {

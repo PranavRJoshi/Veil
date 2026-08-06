@@ -26,9 +26,10 @@ type TextFormatFunc func(module string, fields map[string]interface{}) string
 
 // TextSink writes formatted text lines to an io.Writer.
 type TextSink struct {
-	mu     sync.Mutex
-	w      io.Writer
-	format TextFormatFunc
+	mu       sync.Mutex
+	w        io.Writer
+	format   TextFormatFunc
+	colorize func(module, line string) string // nil: no coloring
 }
 
 // NewTextSink creates a sink that writes formatted text to w.
@@ -40,8 +41,19 @@ func NewTextSink(w io.Writer, format TextFormatFunc) *TextSink {
 	return &TextSink{w: w, format: format}
 }
 
+// WithColorize sets a function that tints each formatted line by module, used
+// to give each module a distinct color in multi-module output. A nil function
+// leaves lines uncolored. Returns the sink for chaining.
+func (s *TextSink) WithColorize(fn func(module, line string) string) *TextSink {
+	s.colorize = fn
+	return s
+}
+
 func (s *TextSink) Emit(module string, fields map[string]interface{}) error {
 	line := s.format(module, fields)
+	if s.colorize != nil {
+		line = s.colorize(module, line)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := fmt.Fprintln(s.w, line)

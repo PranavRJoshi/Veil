@@ -29,6 +29,7 @@ type Config struct {
 	ListModules bool              /* --list-modules */
 	ShowHelp    bool              /* --help or -h */
 	AssumeYes   bool              /* --yes: skip high-volume confirmation prompts */
+	ColorMode   string            /* --color: auto (default), always, never */
 }
 
 // ToSpec resolves parsed flags into a spec.Spec. Every module gets the same
@@ -51,6 +52,7 @@ func (c Config) ToSpec() spec.Spec {
 			ControlPath: c.ControlPath,
 			PprofPath:   c.PprofPath,
 			AssumeYes:   c.AssumeYes,
+			ColorMode:   c.ColorMode,
 		},
 	}
 }
@@ -99,6 +101,7 @@ Global flags:
   --control <path>   Start a Unix socket control server at <path>
   --pprof <path>     Write CPU profile to <path> on exit (use with go tool pprof)
   --yes              Skip confirmation prompts for high-volume tracing
+  --color <when>     Colorize CLI messages: auto (default), always, never
   -h, --help         Show this help message
 `
 
@@ -241,6 +244,7 @@ func buildFlagTable() map[string]registry.FlagDef {
 func Parse(args []string) (Config, error) {
 	cfg := Config{
 		ModuleFlags: make(map[string]string),
+		ColorMode:   "auto",
 	}
 
 	/* Veil expects arguments, especially '--module' */
@@ -316,6 +320,18 @@ func Parse(args []string) (Config, error) {
 
 		case arg == "--yes":
 			cfg.AssumeYes = true
+
+		case arg == "--color":
+			if i+1 >= len(args) {
+				return cfg, fmt.Errorf("--color requires a value (auto, always, never)")
+			}
+			i++
+			switch args[i] {
+			case "auto", "always", "never":
+				cfg.ColorMode = args[i]
+			default:
+				return cfg, fmt.Errorf("invalid --color value %q (want auto, always, never)", args[i])
+			}
 
 		case arg == "--count":
 			cfg.CountMode = true

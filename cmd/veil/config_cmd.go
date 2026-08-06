@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/PranavRJoshi/Veil/internal/color"
 	"github.com/PranavRJoshi/Veil/internal/config"
 	"github.com/PranavRJoshi/Veil/internal/count"
 	"github.com/PranavRJoshi/Veil/internal/registry"
@@ -25,7 +26,7 @@ func runConfigCmd(prog string, args []string) int {
 	failed := false
 	for _, path := range args[1:] {
 		if err := validateConfig(path); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", color.Stderr.Red("error:"), err)
 			failed = true
 			continue
 		}
@@ -60,7 +61,7 @@ func validateConfig(path string) error {
 		if err := validateSpec(sp); err != nil {
 			return fmt.Errorf("%s%s: %w", path, profileTag(name), err)
 		}
-		fmt.Printf("ok: %s%s (%s)\n", path, profileTag(name), summary(sp))
+		fmt.Printf("%s %s%s (%s)\n", color.Stdout.Green("ok:"), path, profileTag(name), summary(sp))
 	}
 	return nil
 }
