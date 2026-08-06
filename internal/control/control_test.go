@@ -85,6 +85,28 @@ func (u *fakeUpdater) Status() string {
 	return "test-status: ok"
 }
 
+// listErrUpdater accepts adds but fails ListFilters, standing in for a map
+// that is momentarily unreadable during the duplicate check.
+type listErrUpdater struct{}
+
+func (listErrUpdater) AddFilter(string, uint64) error { return nil }
+func (listErrUpdater) DelFilter(string, uint64) error { return nil }
+func (listErrUpdater) ListFilters(string) ([]uint64, error) {
+	return nil, fmt.Errorf("map read failed")
+}
+func (listErrUpdater) ClearFilters(string) error { return nil }
+func (listErrUpdater) Status() string            { return "ok" }
+
+// A read failure during the duplicate check must surface as a WARN, not be
+// swallowed into a clean OK that hides the add going in unverified.
+func TestDoAddListErrorSurfaces(t *testing.T) {
+	h := NewHandler(listErrUpdater{})
+	resp := h.doAdd("pid", "100")
+	if !strings.HasPrefix(resp, "WARN") || !strings.Contains(resp, "could not check") {
+		t.Errorf("want WARN about failed check, got %q", resp)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // helper: connect and send/recv
 // ---------------------------------------------------------------------------

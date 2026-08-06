@@ -169,7 +169,7 @@ func (h *Handler) findExisting(mapName string, key uint64) string {
 	if dl, ok := h.updater.(DetailedLister); ok {
 		result, err := dl.ListFiltersDetailed(mapName)
 		if err != nil {
-			return ""
+			return fmt.Sprintf("could not check for an existing key %d in %s: %v", key, mapName, err)
 		}
 		var found []string
 		for mod, keys := range result {
@@ -188,7 +188,7 @@ func (h *Handler) findExisting(mapName string, key uint64) string {
 	}
 	keys, err := h.updater.ListFilters(mapName)
 	if err != nil {
-		return ""
+		return fmt.Sprintf("could not check for an existing key %d in %s: %v", key, mapName, err)
 	}
 	for _, k := range keys {
 		if k == key {

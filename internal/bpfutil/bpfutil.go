@@ -9,6 +9,7 @@
 package bpfutil
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -122,12 +123,16 @@ func (s *MapUpdaterState) ClearBit(bit uint32) error {
 }
 
 // ReadCfg reads the current bitmask from filter_cfg[0].
-// Returns 0 if the key does not yet exist (no filters set at startup).
+// Returns 0 if the key does not yet exist (no filters set at startup)
+// and a read failure is returned with the corresponding error message.
 func (s *MapUpdaterState) ReadCfg() (uint32, error) {
 	cfgKey := uint32(0)
 	var mask uint32
 	if err := s.CfgMap.Lookup(cfgKey, &mask); err != nil {
-		return 0, nil
+		if errors.Is(err, ebpf.ErrKeyNotExist) {
+			return 0, nil
+		}
+		return 0, err
 	}
 	return mask, nil
 }
