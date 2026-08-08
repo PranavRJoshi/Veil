@@ -2,28 +2,32 @@ MODULE_DIR := modules
 
 BIN := bin/veil
 
+# Install layout. Completions go to the dirs bash-completion and zsh's compinit
+# search by default, so a new shell needs no rc edits. Both shells install
+# unconditionally -- each reads only its own dir.
+PREFIX      ?= /usr/local
+DESTDIR     ?=
+BINDIR      := $(DESTDIR)$(PREFIX)/bin
+BASHCOMPDIR ?= $(DESTDIR)$(PREFIX)/share/bash-completion/completions
+ZSHCOMPDIR  ?= $(DESTDIR)$(PREFIX)/share/zsh/site-functions
+
 HEADER_DIR := bpf/headers
 BTF_DIR := bpf/btf
 
-# Kernel release the vendored BTF blobs come from. Pinned to the oldest
-# kernel Veil supports: CO-RE can only reference fields present at compile
-# time, so building against 5.8 guarantees the relocations resolve on
-# anything from 5.8 upwards. Bumping this is a deliberate decision to raise
-# the baseline, not a routine update.
-#
-# 5.8 is the floor because every module emits through a ring buffer, and
-# BPF_MAP_TYPE_RINGBUF landed in 5.8. A 5.4 BTF does not define it, nor
-# BPF_ANY, so the sources do not compile against one.
+# Kernel release of the vendored BTF blobs, pinned to the oldest kernel Veil
+# supports. CO-RE can only reference fields present at compile time, so building
+# against 5.8 keeps relocations valid on 5.8+. The floor is 5.8 because every
+# module emits through a ring buffer (BPF_MAP_TYPE_RINGBUF, added in 5.8), which
+# older BTF lacks. Bumping this raises the baseline.
 BTF_RELEASE := 5.8.0-63-generic
 
 VMLINUX_HEADERS := $(HEADER_DIR)/vmlinux_x86.h $(HEADER_DIR)/vmlinux_arm64.h
 
-# bpf2go writes <stem>_<endian>_<arch>.{go,o} into each module directory,
-# one pair per target architecture. Matched by pattern so adding a module
-# or a target does not mean editing this file.
+# bpf2go writes <stem>_<endian>_<arch>.{go,o} per module, one pair per target
+# arch. Matched by pattern so adding a module or target needs no edit here.
 BPF2GO_ARTIFACTS := $(MODULE_DIR)/*/*_bpfe[lb]*.go $(MODULE_DIR)/*/*_bpfe[lb]*.o
 
-.PHONY: all help generate regenerate build clean test test-integration test-integration-race
+.PHONY: all help generate regenerate build install uninstall clean test test-integration test-integration-race
 
 all: generate build ## Generate BPF objects and build bin/veil
 
@@ -33,17 +37,14 @@ help: ## List available targets
 generate: $(VMLINUX_HEADERS) ## Generate vmlinux headers + bpf2go objects (needs clang, bpftool)
 	go generate ./...
 
-# Regenerate from scratch. Needed after changing a bpf2go target, since
-# bpf2go writes new filenames without removing the old ones, and stale
-# objects would collide with the new build constraints.
+# bpf2go writes new filenames without removing old ones, so a changed target
+# leaves stale objects that collide with the new build constraints. Clean first.
 regenerate: ## Clean, then regenerate (after changing a bpf2go target)
 	$(MAKE) clean
 	$(MAKE) generate
 
-# The headers are derived from the vendored BTF rather than from
-# /sys/kernel/btf/vmlinux, so a build does not depend on whichever kernel
-# the developer happens to be running, and the x86 target can be built on
-# an arm64 host.
+# Headers come from the vendored BTF, not /sys/kernel/btf/vmlinux, so a build
+# does not depend on the developer's running kernel and x86 can build on arm64.
 $(HEADER_DIR)/vmlinux_x86.h: $(BTF_DIR)/x86_64/$(BTF_RELEASE).btf.tar.xz
 	@mkdir -p $(HEADER_DIR)
 	tar -xOf $< > $(HEADER_DIR)/.btf_x86.tmp
@@ -59,20 +60,29 @@ $(HEADER_DIR)/vmlinux_arm64.h: $(BTF_DIR)/arm64/$(BTF_RELEASE).btf.tar.xz
 build: ## Build bin/veil (Go only, no BPF toolchain)
 	go build -o $(BIN) ./cmd/veil
 
+install: build ## Install veil + shell completions (PREFIX=/usr/local)
+	install -Dm0755 $(BIN) $(BINDIR)/veil
+	install -d $(BASHCOMPDIR) $(ZSHCOMPDIR)
+	$(BIN) completion bash > $(BASHCOMPDIR)/veil
+	$(BIN) completion zsh  > $(ZSHCOMPDIR)/_veil
+	@echo "installed $(BINDIR)/veil"
+
+uninstall: ## Remove installed veil + completions
+	rm -f $(BINDIR)/veil $(BASHCOMPDIR)/veil $(ZSHCOMPDIR)/_veil
+
 test: ## Run unit tests (race, no root)
 	go test -race -count=1 ./...
 
-# Integration tests load real BPF programs, so the test binary needs root.
-# -exec sudo runs only the compiled binary under sudo, keeping the build
-# and the module cache owned by the current user.
+# Integration tests load real BPF, so the test binary needs root. -exec sudo
+# runs only the compiled binary under sudo, leaving the build and module cache
+# owned by the current user.
 test-integration: ## Run integration tests (loads BPF, needs sudo)
 	go test -tags integration -exec sudo -count=1 -timeout 5m ./modules/...
 
-# Separate from test-integration rather than folded into it. The race
-# detector slows Go-side execution, and the negative assertions are fixed
-# wall-clock windows, so under -race "no event arrived" becomes easier to
-# satisfy. The non-race run stays the authoritative one; this pass exists
-# to find data races in the modules and the test harness.
+# Separate from test-integration: -race slows Go execution, and the negative
+# assertions are fixed wall-clock windows, so "no event arrived" gets easier to
+# satisfy under it. The non-race run stays authoritative; this pass exists to
+# catch data races in the modules and harness.
 test-integration-race: ## Integration tests under the race detector
 	go test -tags integration -exec sudo -count=1 -race -timeout 10m ./modules/...
 
