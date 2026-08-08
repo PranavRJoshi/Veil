@@ -20,6 +20,7 @@ Complete CLI reference for all modules, flags, and features.
 - [Multi-Module Mode](#multi-module-mode)
 - [Event Enrichment](#event-enrichment)
 - [Output Formats](#output-formats)
+- [Colored Output](#colored-output)
 - [Configuration File](#configuration-file)
   - [Profiles](#profiles)
   - [Validating a Config](#validating-a-config)
@@ -29,6 +30,9 @@ Complete CLI reference for all modules, flags, and features.
   - [Unix Socket Control](#unix-socket-control)
   - [Control Commands](#control-commands)
   - [Multi-Module Routing](#multi-module-routing)
+- [Shell Completion](#shell-completion)
+  - [Installation](#installation)
+  - [Name Suggestions](#name-suggestions)
 - [Practical Recipes](#practical-recipes)
 
 ---
@@ -47,6 +51,7 @@ Complete CLI reference for all modules, flags, and features.
 | `--count-by <field>` | Override aggregation key (implies `--count`). |
 | `--control <path>` | Start a Unix socket control server at the given path. |
 | `--yes` | Skip the confirmation prompt for high-volume tracing (e.g. uprobe without a filter). |
+| `--color <when>` | Colorize CLI messages: `auto` (default), `always`, `never`. See [Colored Output](#colored-output). |
 | `--list-modules` | List available modules and exit. |
 | `-h`, `--help` | Show help message. |
 
@@ -479,6 +484,22 @@ Field names are the output fields listed for each module above. Unknown fields a
 
 ---
 
+## Colored Output
+
+Veil colorizes its own diagnostics -- `error:` in red, `warning:` in yellow, `config validate`'s `ok:` in green, and "did you mean" hints dimmed. In a multi-module run, each module's text events are tinted a distinct color so the interleaved streams are easy to tell apart.
+
+`--color <when>` controls it:
+
+| Value | Behavior |
+|---|---|
+| `auto` (default) | Color only when the stream is a terminal, so piping or redirecting keeps captured output clean. |
+| `always` | Force color on, even when piped. |
+| `never` | Disable color. |
+
+The [`NO_COLOR`](https://no-color.org/) environment variable disables color under `auto`; `--color always` overrides it. Because `auto` already drops color when the output is not a terminal, piping into `grep` or a file needs no extra flag.
+
+---
+
 ## Configuration File
 
 `--config <path>` loads the whole trace from a YAML file instead of flags. The
@@ -715,6 +736,45 @@ Without the module prefix, shared maps fan out to all modules:
 
 ```
 veil $ add pid 1234                 # adds PID 1234 to all loaded modules
+```
+
+---
+
+## Shell Completion
+
+Veil generates completion scripts for bash and zsh. They complete subcommands, global and module flags, module names, and enum values (`--output`, `--color`, `--enrich`), and read profile names straight from the file named by `--config`. Flag suggestions narrow to the selected module(s), so after `--module memory` only memory's flags are offered.
+
+Load it into the current shell:
+
+```bash
+source <(veil completion bash)   # bash
+source <(veil completion zsh)    # zsh
+```
+
+To persist, add that line to `~/.bashrc` or `~/.zshrc`, or install the scripts system-wide (below). Completion triggers only when `veil` is on your `PATH` and invoked as `veil`, not `./bin/veil`.
+
+### Installation
+
+`make install` puts `veil` on your `PATH` and drops both completion scripts into the directories bash-completion and zsh's `compinit` search, so a new shell picks them up with no rc edits:
+
+```bash
+sudo make install                  # PREFIX=/usr/local
+make install PREFIX=$HOME/.local   # rootless
+sudo make uninstall
+```
+
+Both shells are installed regardless of which you use; the scripts are inert files, so a missing shell is not an error.
+
+### Name Suggestions
+
+When you mistype a module, flag, syscall, or `--count-by` field, Veil appends the closest valid names -- the same registry data that drives completion:
+
+```
+$ veil --module sched
+error: unknown module "sched"
+
+did you mean:
+scheduler
 ```
 
 ---

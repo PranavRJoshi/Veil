@@ -16,6 +16,8 @@ low.
   stream.
 - **Flexible output.** Text or JSON, with optional enrichment (timestamps,
   process and user names) and a count/summary mode for top-N aggregation.
+- **Terminal-friendly CLI.** Colorized diagnostics with per-module tinting,
+  bash/zsh completion, and "did you mean" suggestions for mistyped names.
 - **Portable objects.** CO-RE with pinned BTF, built per architecture
   (x86_64, arm64). The generated objects are committed, so a plain build needs
   no BPF toolchain.
@@ -46,6 +48,14 @@ sudo ./bin/veil --module syscall --pid $(pidof nginx)
 Building from source needs Go 1.18+, and regenerating the BPF objects needs
 Clang 14+ and bpftool. The generated objects are committed, so `go build
 ./cmd/veil` works without the BPF toolchain when you are not changing the C.
+
+To put `veil` on your `PATH` with bash and zsh completion:
+
+```bash
+sudo make install                  # or: make install PREFIX=$HOME/.local
+```
+
+See [Shell Completion](docs/USAGE.md#shell-completion) for details.
 
 ## Examples
 
