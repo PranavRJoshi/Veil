@@ -40,10 +40,17 @@ func main() {
 	// --color is not known until Parse succeeds; parse-time messages use auto.
 	color.Init("auto")
 
-	// The "config" verb is a subcommand, not a flag; handle it before the
-	// flag parser and before any kernel work (validation is kernel-free).
-	if args := os.Args[1:]; len(args) > 0 && args[0] == "config" {
-		os.Exit(runConfigCmd(os.Args[0], args[1:]))
+	// Subcommands are verbs, not flags; handle them before the flag parser and
+	// before any kernel work (all are kernel-free).
+	if args := os.Args[1:]; len(args) > 0 {
+		switch args[0] {
+		case "config":
+			os.Exit(runConfigCmd(os.Args[0], args[1:]))
+		case "completion":
+			os.Exit(runCompletionCmd(os.Args[0], args[1:]))
+		case "__complete":
+			os.Exit(runComplete(args[1:]))
+		}
 	}
 
 	cfg, err := cli.Parse(os.Args[1:])
