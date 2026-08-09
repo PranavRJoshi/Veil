@@ -41,21 +41,28 @@ func runCompletionCmd(prog string, args []string) int {
 
 // The wrappers pass the words after the program name, up to and including the
 // (possibly empty) word under the cursor, to "@@CMD@@ __complete", then hand
-// its newline-separated output back to the shell.
+// its newline-separated output back to the shell. When the engine returns
+// nothing (a value's domain is a file path, e.g. --config or config validate),
+// the shell falls back to its own path completion: "-o default" in bash, and an
+// explicit "_files" in zsh.
 
 const bashCompletion = `_@@CMD@@_complete() {
     local IFS=$'\n'
     local args=("${COMP_WORDS[@]:1:COMP_CWORD}")
     COMPREPLY=($(@@CMD@@ __complete "${args[@]}"))
 }
-complete -F _@@CMD@@_complete @@CMD@@
+complete -o default -F _@@CMD@@_complete @@CMD@@
 `
 
 const zshCompletion = `#compdef @@CMD@@
 _@@CMD@@() {
     local -a completions
     completions=(${(f)"$(@@CMD@@ __complete "${(@)words[2,CURRENT]}")"})
-    compadd -- $completions
+    if (( ${#completions} )); then
+        compadd -- $completions
+    else
+        _files
+    fi
 }
 compdef _@@CMD@@ @@CMD@@
 `

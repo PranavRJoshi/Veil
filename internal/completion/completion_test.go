@@ -146,6 +146,39 @@ func TestModuleValueCommaCompletes(t *testing.T) {
 	}
 }
 
+func TestSubcommandGrammar(t *testing.T) {
+	tests := []struct {
+		name  string
+		words []string
+		want  []string
+	}{
+		{"config offers validate", []string{"config", ""}, []string{"validate"}},
+		{"config validate prefix", []string{"config", "va"}, []string{"validate"}},
+		{"config validate arg is a path", []string{"config", "validate", ""}, nil},
+		{"config validate second path", []string{"config", "validate", "a.yaml", ""}, nil},
+		{"completion offers shells", []string{"completion", ""}, []string{"bash", "zsh"}},
+		{"completion shell prefix", []string{"completion", "z"}, []string{"zsh"}},
+		{"completion arg is done", []string{"completion", "bash", ""}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Complete(tt.words); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Complete(%v) = %v, want %v", tt.words, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValueFlagFallsBackToPath(t *testing.T) {
+	// A value flag whose domain is a file path returns nothing, so the shell
+	// wrapper can complete the path itself.
+	for _, prev := range []string{"--config", "--pprof", "--control"} {
+		if got := Complete([]string{prev, ""}); got != nil {
+			t.Errorf("Complete(%s \"\") = %v, want nil", prev, got)
+		}
+	}
+}
+
 func TestValueFlagSuppressesNames(t *testing.T) {
 	// --pprof takes a path we don't complete; offering flag names there would
 	// be wrong (the shell should fall back to file completion instead).

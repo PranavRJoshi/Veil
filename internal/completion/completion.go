@@ -38,6 +38,22 @@ func Complete(words []string) []string {
 			prev = words[n-2]
 		}
 	}
+	// A fully typed subcommand has its own grammar; its argument positions
+	// return nil so the shell wrapper falls back to file-path completion.
+	if len(words) >= 2 {
+		switch words[0] {
+		case "config":
+			if len(words) == 2 {
+				return filterPrefix([]string{"validate"}, cur)
+			}
+			return nil
+		case "completion":
+			if len(words) == 2 {
+				return filterPrefix([]string{"bash", "zsh"}, cur)
+			}
+			return nil
+		}
+	}
 	return filterPrefix(candidates(words, prev, cur), cur)
 }
 
