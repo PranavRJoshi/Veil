@@ -22,7 +22,9 @@ const (
 	codeRed    = "31"
 	codeGreen  = "32"
 	codeYellow = "33"
+	codeCyan   = "36"
 	codeDim    = "2"
+	codeBold   = "1"
 )
 
 // palette holds the ANSI codes cycled through for per-module tinting; the
@@ -68,7 +70,9 @@ func (s Stream) wrap(code, str string) string {
 func (s Stream) Red(str string) string    { return s.wrap(codeRed, str) }
 func (s Stream) Green(str string) string  { return s.wrap(codeGreen, str) }
 func (s Stream) Yellow(str string) string { return s.wrap(codeYellow, str) }
+func (s Stream) Cyan(str string) string   { return s.wrap(codeCyan, str) }
 func (s Stream) Dim(str string) string    { return s.wrap(codeDim, str) }
+func (s Stream) Bold(str string) string   { return s.wrap(codeBold, str) }
 
 // Paint tints str with the palette color at index i, wrapping when i exceeds
 // the palette size, so each module keeps a stable distinct color.

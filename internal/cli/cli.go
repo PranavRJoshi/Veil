@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/PranavRJoshi/Veil/internal/color"
 	"github.com/PranavRJoshi/Veil/internal/registry"
 	"github.com/PranavRJoshi/Veil/internal/spec"
 	"github.com/PranavRJoshi/Veil/internal/suggest"
@@ -86,28 +87,28 @@ func (c Config) TraceFlags() []string {
 	return names
 }
 
-const globalUsage = `Usage: veil --module <name[,name...]> [module-flags...]
+const usageLine = "Usage: veil --module <name[,name...]> [module-flags...]"
 
-Global flags:
-  --module <name>    Select the module to run (required unless --config)
-  --config <path>    Load the trace spec from a YAML file (governs modules/output)
-  --profile <name>   Select a profile from the --config file (default: the file's default)
-  --list-modules     List available modules and exit
-  --output <format>  Output format: text (default), json
-  --enrich <opts>    Enable enrichment: time, proc, user, all (comma-separated)
-  --fields <a,b,c>   Project output to these fields (comma-separated)
-  --count            Enable count/summary mode: suppress live output, show top-N on exit
-  --count-by <field> Override aggregation key (default: per-module, e.g., syscall, file, dport)
-  --control <path>   Start a Unix socket control server at <path>
-  --pprof <path>     Write CPU profile to <path> on exit (use with go tool pprof)
-  --yes              Skip confirmation prompts for high-volume tracing
-  --color <when>     Colorize CLI messages: auto (default), always, never
-  -h, --help         Show this help message
-`
+// globalFlagRows are the non-module flags. Kept in sync with Parse and rendered
+// with the same styling as the registry-derived flag lines.
+var globalFlagRows = []struct{ name, desc string }{
+	{"--module <name>", "Select the module to run (required unless --config)"},
+	{"--config <path>", "Load the trace spec from a YAML file (governs modules/output)"},
+	{"--profile <name>", "Select a profile from the --config file (default: the file's default)"},
+	{"--list-modules", "List available modules and exit"},
+	{"--output <format>", "Output format: text (default), json"},
+	{"--enrich <opts>", "Enable enrichment: time, proc, user, all (comma-separated)"},
+	{"--fields <a,b,c>", "Project output to these fields (comma-separated)"},
+	{"--count", "Enable count/summary mode: suppress live output, show top-N on exit"},
+	{"--count-by <field>", "Override aggregation key (default: per-module, e.g., syscall, file, dport)"},
+	{"--control <path>", "Start a Unix socket control server at <path>"},
+	{"--pprof <path>", "Write CPU profile to <path> on exit (use with go tool pprof)"},
+	{"--yes", "Skip confirmation prompts for high-volume tracing"},
+	{"--color <when>", "Colorize CLI messages: auto (default), always, never"},
+	{"-h, --help", "Show this help message"},
+}
 
-const negationUsage = `
-Negation filter examples:
-  --pid '!1234'         Exclude PID 1234
+const negationExamples = `  --pid '!1234'         Exclude PID 1234
   --pid '100,!200'      Allow only PID 100, but never 200
   --syscall '!ioctl'    Exclude ioctl syscalls
   --cpu '!0'            Exclude CPU 0
@@ -120,10 +121,15 @@ Negation filter examples:
 */
 func usage() {
 	var b strings.Builder
-	b.WriteString(globalUsage)
+	b.WriteString(color.Stderr.Bold(usageLine) + "\n\n")
+
+	b.WriteString(header("Global flags:"))
+	for _, r := range globalFlagRows {
+		b.WriteString(styledFlagLine(r.name, r.desc))
+	}
 
 	if shared := sharedFlags(); len(shared) > 0 {
-		b.WriteString("\nCommon filter flags:\n")
+		b.WriteString("\n" + header("Common filter flags:"))
 		for _, f := range shared {
 			b.WriteString(flagLine(f))
 		}
@@ -134,18 +140,23 @@ func usage() {
 		if len(specific) == 0 {
 			continue
 		}
-		b.WriteString("\n" + title(info.Name) + " module flags:\n")
+		b.WriteString("\n" + header(title(info.Name)+" module flags:"))
 		for _, f := range specific {
 			b.WriteString(flagLine(f))
 		}
 	}
 
-	b.WriteString(negationUsage)
+	b.WriteString("\n" + header("Negation filter examples:") + negationExamples)
 	fmt.Fprint(os.Stderr, b.String())
 }
 
+// header renders a bold section heading, including its trailing newline.
+func header(s string) string {
+	return color.Stderr.Bold(s) + "\n"
+}
+
 /*
-	flagLine renders one flag as a help line.
+	flagLine renders one flag definition as a help line.
 */
 func flagLine(f registry.FlagDef) string {
 	name := "--" + f.Name
@@ -155,7 +166,18 @@ func flagLine(f registry.FlagDef) string {
 	if f.HasValue {
 		name += " <value>"
 	}
-	return fmt.Sprintf("  %-24s %s\n", name, f.Description)
+	return styledFlagLine(name, f.Description)
+}
+
+// styledFlagLine renders one flag row with the name colored and padded to a
+// fixed column. Padding is computed from the plain name so the color codes do
+// not throw off the alignment.
+func styledFlagLine(name, desc string) string {
+	pad := 24 - len(name)
+	if pad < 0 {
+		pad = 0
+	}
+	return fmt.Sprintf("  %s%s %s\n", color.Stderr.Cyan(name), strings.Repeat(" ", pad), desc)
 }
 
 /*

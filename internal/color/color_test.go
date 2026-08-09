@@ -41,6 +41,25 @@ func TestWrapEnabled(t *testing.T) {
 	}
 }
 
+func TestStyleCodes(t *testing.T) {
+	s := Stream{enabled: true}
+	tests := []struct {
+		got  string
+		code string
+	}{
+		{s.Bold("x"), "1"},
+		{s.Cyan("x"), "36"},
+		{s.Red("x"), "31"},
+		{s.Dim("x"), "2"},
+	}
+	for _, tt := range tests {
+		want := "\x1b[" + tt.code + "mx\x1b[0m"
+		if tt.got != want {
+			t.Errorf("got %q, want %q", tt.got, want)
+		}
+	}
+}
+
 func TestWrapDisabledIsIdentity(t *testing.T) {
 	s := Stream{enabled: false}
 	for _, in := range []string{"error:", "ok:", ""} {
